@@ -29,11 +29,14 @@ export function createRuntimeContext(): RuntimeContext {
   const store = new InMemoryStore();
   const queue = createQueueBroker();
   const travelEstimator = createTravelEstimator();
+  const minConfidence = Number(Bun.env.VENDOR_MIN_CONFIDENCE ?? 0.65);
 
   const services: RuntimeServices = {
     orderApi: new OrderApiService(store, queue),
     orchestrator: new OrchestratorService(store, queue),
-    vendorAgent: new VendorAgentService(store, queue),
+    vendorAgent: new VendorAgentService(store, queue, {
+      minConfidence,
+    }),
     reportAggregator: new ReportAggregatorService(store, queue),
     routePlanner: new RoutePlannerService(store, queue, travelEstimator),
     dispatch: new DispatchService(store),

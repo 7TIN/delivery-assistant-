@@ -10,6 +10,7 @@ export interface QueueBroker {
     eventName: K,
     handler: QueueHandler<K>,
   ): () => void;
+  close?(): Promise<void>;
 }
 
 interface BrokerOptions {
@@ -59,6 +60,10 @@ export class InMemoryQueueBroker implements QueueBroker {
         await this.executeWithRetry(() => handler(payload), eventName);
       }),
     );
+  }
+
+  async close(): Promise<void> {
+    this.handlers.clear();
   }
 
   private async executeWithRetry(

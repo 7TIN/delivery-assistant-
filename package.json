@@ -1,26 +1,28 @@
 {
-  "name": "delivery",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "dev": "bun run apps/order-api/src/main.ts",
-    "dev:order-api": "bun run apps/order-api/src/main.ts",
-    "dev:orchestrator": "bun run apps/orchestrator/src/main.ts",
-    "dev:vendor-agent": "bun run apps/vendor-agent/src/main.ts",
-    "dev:report-aggregator": "bun run apps/report-aggregator/src/main.ts",
-    "dev:route-planner": "bun run apps/route-planner/src/main.ts",
-    "dev:dispatch": "bun run apps/dispatch/src/main.ts",
-    "dev:ops-fallback": "bun run apps/ops-fallback/src/main.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "bullmq": "^5.71.1",
-    "ioredis": "^5.10.1"
-  }
+    "name":  "delivery",
+    "type":  "module",
+    "private":  true,
+    "scripts":  {
+                    "dev":  "bun run apps/order-api/src/main.ts",
+                    "dev:order-api":  "bun run apps/order-api/src/main.ts",
+                    "dev:orchestrator":  "bun run apps/orchestrator/src/main.ts",
+                    "dev:vendor-agent":  "bun run apps/vendor-agent/src/main.ts",
+                    "dev:report-aggregator":  "bun run apps/report-aggregator/src/main.ts",
+                    "dev:route-planner":  "bun run apps/route-planner/src/main.ts",
+                    "dev:dispatch":  "bun run apps/dispatch/src/main.ts",
+                    "dev:ops-fallback":  "bun run apps/ops-fallback/src/main.ts",
+                    "typecheck":  "tsc --noEmit",
+                    "smoke:test":  "powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1",
+                    "test":  "bun test"
+                },
+    "devDependencies":  {
+                            "@types/bun":  "latest"
+                        },
+    "peerDependencies":  {
+                             "typescript":  "^5"
+                         },
+    "dependencies":  {
+                         "bullmq":  "^5.71.1",
+                         "ioredis":  "^5.10.1"
+                     }
 }

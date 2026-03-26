@@ -6,7 +6,7 @@ registerAllWorkers(context);
 
 const port = Number(Bun.env.ORDER_API_PORT ?? 3000);
 
-Bun.serve({
+const server = Bun.serve({
   port,
   async fetch(request: Request) {
     const url = new URL(request.url);
@@ -57,6 +57,21 @@ Bun.serve({
 });
 
 console.log(`order-api listening on http://localhost:${port}`);
+
+const stop = async (signal: string): Promise<void> => {
+  console.log(`Received ${signal}, shutting down...`);
+  server.stop(true);
+  await context.queue.close?.();
+  process.exit(0);
+};
+
+process.on("SIGINT", () => {
+  void stop("SIGINT");
+});
+
+process.on("SIGTERM", () => {
+  void stop("SIGTERM");
+});
 
 function matchOrderPath(path: string):
   | { orderId: string; action: "root" | "cancel" | "route" }

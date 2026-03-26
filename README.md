@@ -1,40 +1,62 @@
 # delivery
 
-Backend MVP scaffold for multi-vendor single-rider orchestration.
+Backend MVP scaffold for multi-vendor, single-rider orchestration.
 
-## Run
+## Prerequisites
+
+- Bun 1.2+
+- PowerShell (for smoke test script)
+- Redis (only if running BullMQ mode)
+
+## Environment
+
+Copy `.env.example` to `.env` and update values.
+
+```bash
+cp .env.example .env
+```
+
+Important values:
+
+- `ORDER_API_PORT=3000`
+- `QUEUE_DRIVER=in-memory` (default local mode)
+- `QUEUE_DRIVER=bullmq` (production queue mode)
+- `REDIS_URL=redis://localhost:6379` (required for BullMQ mode)
+- `GRAPH_HOPPER_API_KEY=<optional>`
+- `VENDOR_MIN_CONFIDENCE=0.65`
+
+## Run (in-memory mode)
+
+```bash
+bun install
+bun run dev
+```
+
+## Run (BullMQ mode)
+
+1. Start Redis.
+2. Set `QUEUE_DRIVER=bullmq` (and `REDIS_URL` if non-default).
+3. Run:
 
 ```bash
 bun run dev
 ```
 
-Server starts on `http://localhost:3000` by default.
+API base URL: `http://localhost:3000`
 
 ## Endpoints
 
+- `GET /health`
 - `POST /api/v1/orders`
 - `GET /api/v1/orders/:orderId`
-- `POST /api/v1/orders/:orderId/cancel`
 - `GET /api/v1/orders/:orderId/route`
-- `GET /health`
+- `POST /api/v1/orders/:orderId/cancel`
 
-## Example request
+## Smoke Test (one command)
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/orders \
-  -H "content-type: application/json" \
-  -d '{
-    "userId": "usr_001",
-    "deliveryLocation": { "lat": 12.9716, "lng": 77.5946, "address": "Bengaluru" },
-    "items": [
-      { "itemId": "milk", "name": "Milk", "category": "grocery", "merchantId": "grocery_1", "quantity": 2 },
-      { "itemId": "burger", "name": "Burger", "category": "food", "merchantId": "food_9", "quantity": 1 },
-      { "itemId": "cable", "name": "USB Cable", "category": "electronics", "merchantId": "electronics_2", "quantity": 1 }
-    ]
-  }'
+bun run smoke:test
 ```
 
-## Notes
+This starts the API in background, runs full flow checks, and prints JSON results.
 
-- Queue driver defaults to in-memory (`QUEUE_DRIVER=in-memory`).
-- `bullmq` + `ioredis` adapter is scaffolded as a placeholder and can be activated after dependencies are installed.
