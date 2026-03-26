@@ -12,7 +12,7 @@
                     "dev:dispatch":  "bun run apps/dispatch/src/main.ts",
                     "dev:ops-fallback":  "bun run apps/ops-fallback/src/main.ts",
                     "typecheck":  "tsc --noEmit",
-                    "smoke:test":  "powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1",
+                    "smoke:test":  "powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1 -RepositoryDriver memory",
                     "test":  "bun test",
                     "prisma":  "bunx --bun prisma",
                     "prisma:generate":  "bunx --bun prisma generate",

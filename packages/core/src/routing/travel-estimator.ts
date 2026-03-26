@@ -2,7 +2,9 @@ import type { GeoPoint } from "../../../contracts/src";
 import { estimateTravelMinutes, haversineKm } from "../utils";
 
 const DEFAULT_OSRM_BASE_URL = "https://router.project-osrm.org";
-const DEFAULT_TIMEOUT_MS = 2500;
+const DEFAULT_TIMEOUT_MS = 10000;
+const DEFAULT_HEALTH_RETRIES = 3;
+const DEFAULT_HEALTH_RETRY_DELAY_MS = 600;
 
 export interface TravelEstimator {
   estimateMinutes(from: GeoPoint, to: GeoPoint): Promise<number>;
@@ -28,7 +30,7 @@ export class OsrmTravelEstimator implements TravelEstimator {
 
   constructor(
     private readonly baseUrl = getOsrmBaseUrl(),
-    private readonly timeoutMs = Number(Bun.env.OSRM_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
+    private readonly timeoutMs = getOsrmTimeoutMs(),
   ) {}
 
   async estimateMinutes(from: GeoPoint, to: GeoPoint): Promise<number> {
@@ -37,7 +39,7 @@ export class OsrmTravelEstimator implements TravelEstimator {
     try {
       const response = await fetchWithTimeout(url, this.timeoutMs);
       if (!response.ok) {
-        throw new Error(`OSRM request failed: ${response.status}`);
+        throw new Error(`OSRM request failed: HTTP ${response.status}`);
       }
 
       const data = (await response.json()) as {
@@ -52,7 +54,7 @@ export class OsrmTravelEstimator implements TravelEstimator {
 
       return Math.max(1, Math.round(durationSec / 60));
     } catch (error) {
-      console.warn("OSRM estimate failed, using local fallback", error);
+      console.warn(`OSRM estimate failed (${normalizeError(error)}), using local fallback`);
       return this.fallback.estimateMinutes(from, to);
     }
   }
@@ -67,22 +69,75 @@ export function getOsrmBaseUrl(): string {
   return (Bun.env.OSRM_BASE_URL ?? DEFAULT_OSRM_BASE_URL).replace(/\/+$/, "");
 }
 
+export function getOsrmTimeoutMs(): number {
+  const parsed = Number(Bun.env.OSRM_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_TIMEOUT_MS;
+  }
+  return Math.floor(parsed);
+}
+
 export async function checkOsrmApiAvailability(): Promise<OsrmAvailabilityResult> {
-  const baseUrl = getOsrmBaseUrl();
+  const configuredBaseUrl = getOsrmBaseUrl();
 
   if (!isOsrmEnabled()) {
     return {
       enabled: false,
-      baseUrl,
+      baseUrl: configuredBaseUrl,
       reachable: false,
       error: "OSRM disabled by OSRM_ENABLED=false",
     };
   }
 
+  const retries = getOsrmHealthRetries();
+  const retryDelayMs = getOsrmHealthRetryDelayMs();
+  const timeoutMs = getOsrmTimeoutMs();
+  const candidateBaseUrls = getCandidateBaseUrls(configuredBaseUrl);
+
+  let lastFailure: OsrmAvailabilityResult | undefined;
+
+  for (const candidateBaseUrl of candidateBaseUrls) {
+    for (let attempt = 1; attempt <= retries; attempt += 1) {
+      const probe = await probeOsrm(candidateBaseUrl, timeoutMs);
+      if (probe.reachable) {
+        if (candidateBaseUrl !== configuredBaseUrl) {
+          console.warn(
+            `[routing] OSRM reachable via fallback URL ${candidateBaseUrl}. Consider updating OSRM_BASE_URL.`,
+          );
+        }
+        return probe;
+      }
+
+      lastFailure = probe;
+
+      if (attempt < retries) {
+        await sleep(retryDelayMs);
+      }
+    }
+  }
+
+  return (
+    lastFailure ?? {
+      enabled: true,
+      baseUrl: configuredBaseUrl,
+      reachable: false,
+      error: "Unknown OSRM probe failure",
+    }
+  );
+}
+
+export function createTravelEstimator(): TravelEstimator {
+  if (isOsrmEnabled()) {
+    return new OsrmTravelEstimator();
+  }
+
+  return new LocalTravelEstimator();
+}
+
+async function probeOsrm(baseUrl: string, timeoutMs: number): Promise<OsrmAvailabilityResult> {
   const sampleFrom: GeoPoint = { lat: 12.9716, lng: 77.5946 };
   const sampleTo: GeoPoint = { lat: 12.9728, lng: 77.6022 };
   const url = buildOsrmRouteUrl(baseUrl, sampleFrom, sampleTo);
-  const timeoutMs = Number(Bun.env.OSRM_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
 
   try {
     const response = await fetchWithTimeout(url, timeoutMs);
@@ -115,17 +170,9 @@ export async function checkOsrmApiAvailability(): Promise<OsrmAvailabilityResult
       enabled: true,
       baseUrl,
       reachable: false,
-      error: error instanceof Error ? error.message : "Unknown OSRM error",
+      error: normalizeError(error),
     };
   }
-}
-
-export function createTravelEstimator(): TravelEstimator {
-  if (isOsrmEnabled()) {
-    return new OsrmTravelEstimator();
-  }
-
-  return new LocalTravelEstimator();
 }
 
 function buildOsrmRouteUrl(baseUrl: string, from: GeoPoint, to: GeoPoint): string {
@@ -139,6 +186,32 @@ function buildOsrmRouteUrl(baseUrl: string, from: GeoPoint, to: GeoPoint): strin
   return `${baseUrl}/route/v1/driving/${coordinates}?${query.toString()}`;
 }
 
+function getCandidateBaseUrls(baseUrl: string): string[] {
+  const candidates = [baseUrl];
+
+  if (baseUrl.startsWith("https://")) {
+    candidates.push(baseUrl.replace("https://", "http://"));
+  }
+
+  return [...new Set(candidates)];
+}
+
+function getOsrmHealthRetries(): number {
+  const parsed = Number(Bun.env.OSRM_HEALTH_RETRIES ?? DEFAULT_HEALTH_RETRIES);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_HEALTH_RETRIES;
+  }
+  return Math.floor(parsed);
+}
+
+function getOsrmHealthRetryDelayMs(): number {
+  const parsed = Number(Bun.env.OSRM_HEALTH_RETRY_DELAY_MS ?? DEFAULT_HEALTH_RETRY_DELAY_MS);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return DEFAULT_HEALTH_RETRY_DELAY_MS;
+  }
+  return Math.floor(parsed);
+}
+
 async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -148,4 +221,19 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function normalizeError(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === "AbortError") {
+      return "Request timed out";
+    }
+    return error.message;
+  }
+
+  return "Unknown OSRM error";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

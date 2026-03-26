@@ -5,6 +5,14 @@ import { InMemoryStore, type OrderStore } from "./store";
 export type RepositoryDriver = "memory" | "prisma";
 
 export function resolveRepositoryDriver(): RepositoryDriver {
+  const forced = Bun.env.FORCE_REPOSITORY_DRIVER?.trim().toLowerCase();
+  if (forced === "prisma") {
+    return "prisma";
+  }
+  if (forced === "memory") {
+    return "memory";
+  }
+
   const configured = Bun.env.REPOSITORY_DRIVER?.trim().toLowerCase();
 
   if (configured === "prisma") {

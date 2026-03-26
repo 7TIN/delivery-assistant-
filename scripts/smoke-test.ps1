@@ -1,6 +1,7 @@
 param(
-  [string]$BaseUrl = "http://localhost:3000",
-  [int]$Port = 3000,
+  [string]$BaseUrl = "http://localhost:3100",
+  [int]$Port = 3100,
+  [string]$RepositoryDriver = "memory",
   [switch]$UseExistingServer
 )
 
@@ -49,9 +50,12 @@ try {
       $queueDriver = "in-memory"
     }
 
-    $repositoryDriver = $env:REPOSITORY_DRIVER
-    if ([string]::IsNullOrWhiteSpace($repositoryDriver)) {
-      $repositoryDriver = "memory"
+    $repoDriver = $RepositoryDriver
+    if ([string]::IsNullOrWhiteSpace($repoDriver)) {
+      $repoDriver = $env:REPOSITORY_DRIVER
+    }
+    if ([string]::IsNullOrWhiteSpace($repoDriver)) {
+      $repoDriver = "memory"
     }
 
     $serverJob = Start-Job -ScriptBlock {
@@ -59,9 +63,9 @@ try {
       Set-Location $repo
       $env:ORDER_API_PORT = [string]$port
       $env:QUEUE_DRIVER = $driver
-      $env:REPOSITORY_DRIVER = $repoDriver
+      $env:FORCE_REPOSITORY_DRIVER = $repoDriver
       bun run dev
-    } -ArgumentList $repoRoot, $Port, $queueDriver, $repositoryDriver
+    } -ArgumentList $repoRoot, $Port, $queueDriver, $repoDriver
 
     Start-Sleep -Seconds 3
   }
@@ -112,3 +116,4 @@ finally {
     Remove-Job -Job $serverJob -ErrorAction SilentlyContinue | Out-Null
   }
 }
+

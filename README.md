@@ -25,7 +25,7 @@ Important values:
 - `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/delivery`
 - `OSRM_ENABLED=true`
 - `OSRM_BASE_URL=https://router.project-osrm.org`
-- `OSRM_TIMEOUT_MS=2500`
+- `OSRM_TIMEOUT_MS=10000`\n- `OSRM_HEALTH_RETRIES=3`\n- `OSRM_HEALTH_RETRY_DELAY_MS=600`
 - `REDIS_URL=redis://localhost:6379` (required for BullMQ mode)
 - `VENDOR_MIN_CONFIDENCE=0.65`
 
@@ -93,3 +93,4 @@ bun run smoke:test
 ```
 
 This starts the API in background, runs full flow checks, and prints JSON results.
+
