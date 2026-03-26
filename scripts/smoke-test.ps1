@@ -49,13 +49,19 @@ try {
       $queueDriver = "in-memory"
     }
 
+    $repositoryDriver = $env:REPOSITORY_DRIVER
+    if ([string]::IsNullOrWhiteSpace($repositoryDriver)) {
+      $repositoryDriver = "memory"
+    }
+
     $serverJob = Start-Job -ScriptBlock {
-      param($repo, $port, $driver)
+      param($repo, $port, $driver, $repoDriver)
       Set-Location $repo
       $env:ORDER_API_PORT = [string]$port
       $env:QUEUE_DRIVER = $driver
+      $env:REPOSITORY_DRIVER = $repoDriver
       bun run dev
-    } -ArgumentList $repoRoot, $Port, $queueDriver
+    } -ArgumentList $repoRoot, $Port, $queueDriver, $repositoryDriver
 
     Start-Sleep -Seconds 3
   }

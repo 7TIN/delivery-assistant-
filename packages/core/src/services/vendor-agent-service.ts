@@ -1,6 +1,6 @@
 import type { OpsTicket, VendorReport } from "../../../contracts/src";
 import type { QueueBroker } from "../../../queue/src";
-import { InMemoryStore } from "../store";
+import type { OrderStore } from "../store";
 import { addMinutes, isoNow, simpleHash } from "../utils";
 
 interface VendorAgentOptions {
@@ -11,7 +11,7 @@ export class VendorAgentService {
   private readonly minConfidence: number;
 
   constructor(
-    private readonly store: InMemoryStore,
+    private readonly store: OrderStore,
     private readonly queue: QueueBroker,
     options: VendorAgentOptions = {},
   ) {
@@ -20,12 +20,12 @@ export class VendorAgentService {
 
   register(): void {
     this.queue.subscribe("vendor.check.requested", async ({ orderId, merchantTask }) => {
-      const order = this.store.getOrder(orderId);
+      const order = await this.store.getOrder(orderId);
       if (!order || order.status === "canceled") {
         return;
       }
 
-      const orderItems = this.store.getOrderItemsByMerchant(orderId, merchantTask.merchantId);
+      const orderItems = await this.store.getOrderItemsByMerchant(orderId, merchantTask.merchantId);
       const report = buildVendorReport({
         orderId,
         merchantId: merchantTask.merchantId,
@@ -33,7 +33,7 @@ export class VendorAgentService {
       });
 
       if (report.confidence < this.minConfidence) {
-        this.store.setMerchantTaskStatus(orderId, merchantTask.id, "failed");
+        await this.store.setMerchantTaskStatus(orderId, merchantTask.id, "failed");
         const ticket = buildOpsTicket(orderId, merchantTask.merchantId, report.confidence);
 
         await this.queue.publish("ops.ticket.created", {
@@ -44,7 +44,7 @@ export class VendorAgentService {
         return;
       }
 
-      this.store.setMerchantTaskStatus(orderId, merchantTask.id, "confirmed");
+      await this.store.setMerchantTaskStatus(orderId, merchantTask.id, "confirmed");
 
       await this.queue.publish("vendor.report.ready", {
         orderId,

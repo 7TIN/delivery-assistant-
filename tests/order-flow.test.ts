@@ -5,6 +5,7 @@ import { createRuntimeContext, registerAllWorkers } from "../packages/core/src";
 const previousQueueDriver = Bun.env.QUEUE_DRIVER;
 const previousVendorMinConfidence = Bun.env.VENDOR_MIN_CONFIDENCE;
 const previousOsrmEnabled = Bun.env.OSRM_ENABLED;
+const previousRepositoryDriver = Bun.env.REPOSITORY_DRIVER;
 
 afterEach(() => {
   if (previousQueueDriver === undefined) {
@@ -24,11 +25,18 @@ afterEach(() => {
   } else {
     Bun.env.OSRM_ENABLED = previousOsrmEnabled;
   }
+
+  if (previousRepositoryDriver === undefined) {
+    delete Bun.env.REPOSITORY_DRIVER;
+  } else {
+    Bun.env.REPOSITORY_DRIVER = previousRepositoryDriver;
+  }
 });
 
 describe("order orchestration flow", () => {
   it("creates an order and produces route + dispatch instruction", async () => {
     Bun.env.QUEUE_DRIVER = "in-memory";
+    Bun.env.REPOSITORY_DRIVER = "memory";
     Bun.env.VENDOR_MIN_CONFIDENCE = "0";
     Bun.env.OSRM_ENABLED = "false";
 
@@ -60,7 +68,7 @@ describe("order orchestration flow", () => {
       ],
     });
 
-    const snapshot = runtime.services.orderApi.getOrderSnapshot(created.orderId);
+    const snapshot = await runtime.services.orderApi.getOrderSnapshot(created.orderId);
 
     expect(snapshot).toBeDefined();
     expect(snapshot?.order.status).toBe("dispatching");
@@ -69,10 +77,12 @@ describe("order orchestration flow", () => {
     expect(snapshot?.dispatchInstruction).toBeDefined();
 
     await runtime.queue.close?.();
+    await runtime.store.close?.();
   });
 
   it("cancels an order", async () => {
     Bun.env.QUEUE_DRIVER = "in-memory";
+    Bun.env.REPOSITORY_DRIVER = "memory";
     Bun.env.VENDOR_MIN_CONFIDENCE = "0";
     Bun.env.OSRM_ENABLED = "false";
 
@@ -97,14 +107,15 @@ describe("order orchestration flow", () => {
       ],
     });
 
-    const canceled = runtime.services.orderApi.cancelOrder(created.orderId);
+    const canceled = await runtime.services.orderApi.cancelOrder(created.orderId);
 
     expect(canceled).toBeDefined();
     expect(canceled?.status).toBe("canceled");
 
-    const snapshot = runtime.services.orderApi.getOrderSnapshot(created.orderId);
+    const snapshot = await runtime.services.orderApi.getOrderSnapshot(created.orderId);
     expect(snapshot?.order.status).toBe("canceled");
 
     await runtime.queue.close?.();
+    await runtime.store.close?.();
   });
 });

@@ -31,7 +31,7 @@ const server = Bun.serve({
 
       const orderMatch = matchOrderPath(path);
       if (orderMatch && request.method === "GET" && orderMatch.action === "root") {
-        const snapshot = context.services.orderApi.getOrderSnapshot(orderMatch.orderId);
+        const snapshot = await context.services.orderApi.getOrderSnapshot(orderMatch.orderId);
         if (!snapshot) {
           return json({ error: "Order not found" }, 404);
         }
@@ -39,7 +39,7 @@ const server = Bun.serve({
       }
 
       if (orderMatch && request.method === "POST" && orderMatch.action === "cancel") {
-        const canceled = context.services.orderApi.cancelOrder(orderMatch.orderId);
+        const canceled = await context.services.orderApi.cancelOrder(orderMatch.orderId);
         if (!canceled) {
           return json({ error: "Order not found" }, 404);
         }
@@ -47,7 +47,7 @@ const server = Bun.serve({
       }
 
       if (orderMatch && request.method === "GET" && orderMatch.action === "route") {
-        const route = context.services.orderApi.getRoute(orderMatch.orderId);
+        const route = await context.services.orderApi.getRoute(orderMatch.orderId);
         if (!route) {
           return json({ error: "Route not available yet" }, 404);
         }
@@ -68,6 +68,7 @@ const stop = async (signal: string): Promise<void> => {
   console.log(`Received ${signal}, shutting down...`);
   server.stop(true);
   await context.queue.close?.();
+  await context.store.close?.();
   process.exit(0);
 };
 

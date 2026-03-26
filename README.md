@@ -7,6 +7,7 @@ Backend MVP scaffold for multi-vendor, single-rider orchestration.
 - Bun 1.2+
 - PowerShell (for smoke test script)
 - Redis (only if running BullMQ mode)
+- PostgreSQL (only if running Prisma repository mode)
 
 ## Environment
 
@@ -20,24 +21,51 @@ Important values:
 
 - `ORDER_API_PORT=3000`
 - `QUEUE_DRIVER=in-memory` or `QUEUE_DRIVER=bullmq`
+- `REPOSITORY_DRIVER=memory` or `REPOSITORY_DRIVER=prisma`
+- `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/delivery`
 - `OSRM_ENABLED=true`
 - `OSRM_BASE_URL=https://router.project-osrm.org`
 - `OSRM_TIMEOUT_MS=2500`
 - `REDIS_URL=redis://localhost:6379` (required for BullMQ mode)
 - `VENDOR_MIN_CONFIDENCE=0.65`
 
-## Run (in-memory mode)
+## Prisma commands
+
+- Generate client:
+
+```bash
+bun run prisma:generate
+```
+
+- Run migration:
+
+```bash
+bun run prisma:migrate
+```
+
+## Run (in-memory repository mode)
 
 ```bash
 bun install
 bun run dev
 ```
 
-## Run (BullMQ mode)
+## Run (Prisma/Postgres repository mode)
+
+1. Start PostgreSQL.
+2. Set `REPOSITORY_DRIVER=prisma` and `DATABASE_URL`.
+3. Run Prisma generate + migrate.
+4. Start API:
+
+```bash
+bun run dev
+```
+
+## Run (BullMQ queue mode)
 
 1. Start Redis.
 2. Set `QUEUE_DRIVER=bullmq`.
-3. Run:
+3. Start API:
 
 ```bash
 bun run dev
@@ -45,9 +73,10 @@ bun run dev
 
 ## Startup logs you now get
 
-- Which queue driver is active (`bullmq` or `in-memory`).
-- Redis connection status (`connected`, `ping success`, reconnect/error/closed).
-- OSRM API availability (`reachable` or fallback warning).
+- Queue driver (`bullmq` or `in-memory`).
+- Repository driver (`prisma` or `memory`).
+- Redis connection status (connected/ping/reconnect/error/closed).
+- OSRM API availability (reachable or fallback warning).
 
 ## Endpoints
 
@@ -57,7 +86,7 @@ bun run dev
 - `GET /api/v1/orders/:orderId/route`
 - `POST /api/v1/orders/:orderId/cancel`
 
-## Smoke Test (one command)
+## Smoke test
 
 ```bash
 bun run smoke:test

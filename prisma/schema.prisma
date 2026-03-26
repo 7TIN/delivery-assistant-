@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Order {
+  id                  String                @id
+  userId              String
+  status              String
+  deliveryLat         Float
+  deliveryLng         Float
+  deliveryAddress     String
+  createdAt           DateTime
+  updatedAt           DateTime
+  canceledAt          DateTime?
+  items               OrderItem[]
+  merchantTasks       MerchantTask[]
+  vendorReports       VendorReport[]
+  routePlans          RoutePlan[]
+  dispatchInstructions DispatchInstruction[]
+  opsTickets          OpsTicket[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id         String @id
+  orderId    String
+  itemId     String
+  name       String
+  category   String
+  merchantId String
+  quantity   Int
+  status     String
+  order      Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([merchantId])
+}
+
+model MerchantTask {
+  id           String   @id
+  orderId      String
+  merchantId   String
+  merchantLat  Float
+  merchantLng  Float
+  taskStatus   String
+  attemptCount Int
+  deadlineAt   DateTime
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([merchantId])
+}
+
+model VendorReport {
+  id          String   @id
+  orderId     String
+  merchantId  String
+  availability String
+  etaReadyAt  DateTime
+  confidence  Float
+  source      String
+  reportedAt  DateTime
+  notes       String?
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, merchantId])
+  @@index([orderId])
+}
+
+model RoutePlan {
+  id                   String   @id
+  orderId              String
+  version              Int
+  stops                Json
+  estimatedCompletionAt DateTime
+  objectiveScore       Float
+  generatedAt          DateTime
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, version])
+  @@index([orderId])
+}
+
+model DispatchInstruction {
+  id                  String   @id
+  orderId             String
+  routeVersion        Int
+  nextStop            Json?
+  pickupNotes         String
+  etaToNextStopMinutes Int
+  issuedAt            DateTime
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, issuedAt])
+}
+
+model OpsTicket {
+  id         String   @id
+  orderId    String
+  merchantId String
+  reason     String
+  priority   String
+  status     String
+  createdAt  DateTime
+  resolvedAt DateTime?
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+}

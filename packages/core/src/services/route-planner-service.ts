@@ -1,6 +1,6 @@
 import type { RoutePlan, RouteStop, VendorReport } from "../../../contracts/src";
 import type { QueueBroker } from "../../../queue/src";
-import { InMemoryStore } from "../store";
+import type { OrderStore } from "../store";
 import type { TravelEstimator } from "../routing/travel-estimator";
 import { estimateTravelMinutes, haversineKm, isoNow } from "../utils";
 
@@ -12,14 +12,14 @@ interface CandidateStop {
 
 export class RoutePlannerService {
   constructor(
-    private readonly store: InMemoryStore,
+    private readonly store: OrderStore,
     private readonly queue: QueueBroker,
     private readonly travelEstimator: TravelEstimator,
   ) {}
 
   register(): void {
     this.queue.subscribe("route.plan.requested", async ({ orderId }) => {
-      const snapshot = this.store.getSnapshot(orderId);
+      const snapshot = await this.store.getSnapshot(orderId);
       if (!snapshot || snapshot.order.status === "canceled") {
         return;
       }
@@ -37,7 +37,7 @@ export class RoutePlannerService {
         travelEstimator: this.travelEstimator,
       });
 
-      this.store.saveRoutePlan(plan);
+      await this.store.saveRoutePlan(plan);
 
       await this.queue.publish("route.plan.updated", {
         orderId,
@@ -136,7 +136,6 @@ async function buildRoutePlan(input: {
     }
   }
 
-  // Use fallback estimator logic for the final leg in local-only mode.
   const finalLegDistance = haversineKm(currentLocation, input.deliveryLocation);
   const finalLegMinutes = estimateTravelMinutes(finalLegDistance);
   totalTravel += finalLegMinutes;

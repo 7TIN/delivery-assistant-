@@ -5,36 +5,39 @@ import type {
   RoutePlan,
 } from "../../../contracts/src";
 import type { QueueBroker } from "../../../queue/src";
-import { InMemoryStore } from "../store";
+import type { OrderStore } from "../store";
 
 export class OrderApiService {
   constructor(
-    private readonly store: InMemoryStore,
+    private readonly store: OrderStore,
     private readonly queue: QueueBroker,
   ) {}
 
   async createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
     validateCreateOrder(request);
 
-    const order = this.store.createOrder(request);
-    this.store.updateOrderStatus(order.id, "orchestrating");
+    const order = await this.store.createOrder(request);
+    await this.store.updateOrderStatus(order.id, "orchestrating");
 
     await this.queue.publish("order.created", { orderId: order.id });
 
+    const savedOrder = await this.store.getOrder(order.id);
+    const merchantTasks = await this.store.getMerchantTasks(order.id);
+
     return {
       orderId: order.id,
-      status: this.store.getOrder(order.id)?.status ?? "created",
-      merchantTaskCount: this.store.getMerchantTasks(order.id).length,
+      status: savedOrder?.status ?? "created",
+      merchantTaskCount: merchantTasks.length,
       createdAt: order.createdAt,
     };
   }
 
-  getOrderSnapshot(orderId: string): OrderSnapshot | undefined {
+  async getOrderSnapshot(orderId: string): Promise<OrderSnapshot | undefined> {
     return this.store.getSnapshot(orderId);
   }
 
-  cancelOrder(orderId: string): { orderId: string; status: string } | undefined {
-    const order = this.store.cancelOrder(orderId);
+  async cancelOrder(orderId: string): Promise<{ orderId: string; status: string } | undefined> {
+    const order = await this.store.cancelOrder(orderId);
     if (!order) {
       return undefined;
     }
@@ -45,7 +48,7 @@ export class OrderApiService {
     };
   }
 
-  getRoute(orderId: string): RoutePlan | undefined {
+  async getRoute(orderId: string): Promise<RoutePlan | undefined> {
     return this.store.getRoutePlan(orderId);
   }
 }

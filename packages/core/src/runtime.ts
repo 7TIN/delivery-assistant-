@@ -1,5 +1,7 @@
 import { createQueueBroker, type QueueBroker } from "../../queue/src";
 import { createTravelEstimator } from "./routing/travel-estimator";
+import { createOrderStore } from "./store-factory";
+import type { OrderStore } from "./store";
 import { DispatchService } from "./services/dispatch-service";
 import { OpsFallbackService } from "./services/ops-fallback-service";
 import { OrchestratorService } from "./services/orchestrator-service";
@@ -7,7 +9,6 @@ import { OrderApiService } from "./services/order-api-service";
 import { ReportAggregatorService } from "./services/report-aggregator-service";
 import { RoutePlannerService } from "./services/route-planner-service";
 import { VendorAgentService } from "./services/vendor-agent-service";
-import { InMemoryStore } from "./store";
 
 export interface RuntimeServices {
   orderApi: OrderApiService;
@@ -20,13 +21,13 @@ export interface RuntimeServices {
 }
 
 export interface RuntimeContext {
-  store: InMemoryStore;
+  store: OrderStore;
   queue: QueueBroker;
   services: RuntimeServices;
 }
 
 export function createRuntimeContext(): RuntimeContext {
-  const store = new InMemoryStore();
+  const store = createOrderStore();
   const queue = createQueueBroker();
   const travelEstimator = createTravelEstimator();
   const minConfidence = Number(Bun.env.VENDOR_MIN_CONFIDENCE ?? 0.65);
@@ -57,7 +58,7 @@ export function registerAllWorkers(context: RuntimeContext): void {
   context.services.routePlanner.register();
   context.services.opsFallback.register();
 
-  context.queue.subscribe("route.plan.updated", ({ orderId }) => {
-    context.services.dispatch.handleRouteUpdate(orderId);
+  context.queue.subscribe("route.plan.updated", async ({ orderId }) => {
+    await context.services.dispatch.handleRouteUpdate(orderId);
   });
 }

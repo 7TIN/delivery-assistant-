@@ -13,16 +13,24 @@
                     "dev:ops-fallback":  "bun run apps/ops-fallback/src/main.ts",
                     "typecheck":  "tsc --noEmit",
                     "smoke:test":  "powershell -ExecutionPolicy Bypass -File scripts/smoke-test.ps1",
-                    "test":  "bun test"
+                    "test":  "bun test",
+                    "prisma":  "bunx --bun prisma",
+                    "prisma:generate":  "bunx --bun prisma generate",
+                    "prisma:migrate":  "bunx --bun prisma migrate dev --name init"
                 },
     "devDependencies":  {
-                            "@types/bun":  "latest"
+                            "@types/bun":  "latest",
+                            "@types/pg":  "^8.20.0",
+                            "prisma":  "^7.5.0"
                         },
     "peerDependencies":  {
                              "typescript":  "^5"
                          },
     "dependencies":  {
+                         "@prisma/adapter-pg":  "^7.5.0",
+                         "@prisma/client":  "^7.5.0",
                          "bullmq":  "^5.71.1",
-                         "ioredis":  "^5.10.1"
+                         "ioredis":  "^5.10.1",
+                         "pg":  "^8.20.0"
                      }
 }

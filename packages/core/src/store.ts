@@ -12,7 +12,33 @@ import {
 } from "../../contracts/src";
 import { addMinutes, isoNow, pseudoMerchantLocation } from "./utils";
 
-export class InMemoryStore {
+export interface OrderStore {
+  createOrder(request: CreateOrderRequest): Promise<Order>;
+  getOrder(orderId: string): Promise<Order | undefined>;
+  updateOrderStatus(orderId: string, status: OrderStatus): Promise<void>;
+  cancelOrder(orderId: string): Promise<Order | undefined>;
+  getOrderItems(orderId: string): Promise<OrderItem[]>;
+  getOrderItemsByMerchant(orderId: string, merchantId: string): Promise<OrderItem[]>;
+  getMerchantTasks(orderId: string): Promise<MerchantTask[]>;
+  upsertMerchantTask(orderId: string, updatedTask: MerchantTask): Promise<void>;
+  setMerchantTaskStatus(
+    orderId: string,
+    merchantTaskId: string,
+    status: MerchantTask["taskStatus"],
+  ): Promise<void>;
+  getVendorReports(orderId: string): Promise<VendorReport[]>;
+  upsertVendorReport(report: VendorReport): Promise<void>;
+  getRoutePlan(orderId: string): Promise<RoutePlan | undefined>;
+  saveRoutePlan(routePlan: RoutePlan): Promise<void>;
+  getDispatchInstruction(orderId: string): Promise<DispatchInstruction | undefined>;
+  saveDispatchInstruction(instruction: DispatchInstruction): Promise<void>;
+  addOpsTicket(ticket: OpsTicket): Promise<void>;
+  getOpsTickets(orderId: string): Promise<OpsTicket[]>;
+  getSnapshot(orderId: string): Promise<OrderSnapshot | undefined>;
+  close?(): Promise<void>;
+}
+
+export class InMemoryStore implements OrderStore {
   private readonly orders = new Map<string, Order>();
   private readonly orderItems = new Map<string, OrderItem[]>();
   private readonly merchantTasks = new Map<string, MerchantTask[]>();
@@ -21,7 +47,7 @@ export class InMemoryStore {
   private readonly dispatchInstructions = new Map<string, DispatchInstruction>();
   private readonly opsTickets = new Map<string, OpsTicket[]>();
 
-  createOrder(request: CreateOrderRequest): Order {
+  async createOrder(request: CreateOrderRequest): Promise<Order> {
     const now = isoNow();
     const orderId = crypto.randomUUID();
 
@@ -56,11 +82,11 @@ export class InMemoryStore {
     return order;
   }
 
-  getOrder(orderId: string): Order | undefined {
+  async getOrder(orderId: string): Promise<Order | undefined> {
     return this.orders.get(orderId);
   }
 
-  updateOrderStatus(orderId: string, status: OrderStatus): void {
+  async updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
     const existing = this.orders.get(orderId);
     if (!existing) {
       return;
@@ -73,7 +99,7 @@ export class InMemoryStore {
     });
   }
 
-  cancelOrder(orderId: string): Order | undefined {
+  async cancelOrder(orderId: string): Promise<Order | undefined> {
     const order = this.orders.get(orderId);
     if (!order) {
       return undefined;
@@ -101,19 +127,19 @@ export class InMemoryStore {
     return canceledOrder;
   }
 
-  getOrderItems(orderId: string): OrderItem[] {
+  async getOrderItems(orderId: string): Promise<OrderItem[]> {
     return this.orderItems.get(orderId) ?? [];
   }
 
-  getOrderItemsByMerchant(orderId: string, merchantId: string): OrderItem[] {
-    return this.getOrderItems(orderId).filter((item) => item.merchantId === merchantId);
+  async getOrderItemsByMerchant(orderId: string, merchantId: string): Promise<OrderItem[]> {
+    return (await this.getOrderItems(orderId)).filter((item) => item.merchantId === merchantId);
   }
 
-  getMerchantTasks(orderId: string): MerchantTask[] {
+  async getMerchantTasks(orderId: string): Promise<MerchantTask[]> {
     return this.merchantTasks.get(orderId) ?? [];
   }
 
-  upsertMerchantTask(orderId: string, updatedTask: MerchantTask): void {
+  async upsertMerchantTask(orderId: string, updatedTask: MerchantTask): Promise<void> {
     const tasks = this.merchantTasks.get(orderId) ?? [];
     const index = tasks.findIndex((task) => task.id === updatedTask.id);
 
@@ -126,7 +152,11 @@ export class InMemoryStore {
     this.merchantTasks.set(orderId, [...tasks, updatedTask]);
   }
 
-  setMerchantTaskStatus(orderId: string, merchantTaskId: string, status: MerchantTask["taskStatus"]): void {
+  async setMerchantTaskStatus(
+    orderId: string,
+    merchantTaskId: string,
+    status: MerchantTask["taskStatus"],
+  ): Promise<void> {
     const tasks = this.merchantTasks.get(orderId) ?? [];
     const next = tasks.map((task) =>
       task.id === merchantTaskId
@@ -139,7 +169,7 @@ export class InMemoryStore {
     this.merchantTasks.set(orderId, next);
   }
 
-  getVendorReports(orderId: string): VendorReport[] {
+  async getVendorReports(orderId: string): Promise<VendorReport[]> {
     const reportsMap = this.vendorReports.get(orderId);
     if (!reportsMap) {
       return [];
@@ -148,41 +178,41 @@ export class InMemoryStore {
     return [...reportsMap.values()];
   }
 
-  upsertVendorReport(report: VendorReport): void {
+  async upsertVendorReport(report: VendorReport): Promise<void> {
     const reports = this.vendorReports.get(report.orderId) ?? new Map<string, VendorReport>();
     reports.set(report.merchantId, report);
     this.vendorReports.set(report.orderId, reports);
   }
 
-  getRoutePlan(orderId: string): RoutePlan | undefined {
+  async getRoutePlan(orderId: string): Promise<RoutePlan | undefined> {
     return this.routePlans.get(orderId);
   }
 
-  saveRoutePlan(routePlan: RoutePlan): void {
+  async saveRoutePlan(routePlan: RoutePlan): Promise<void> {
     this.routePlans.set(routePlan.orderId, routePlan);
-    this.updateOrderStatus(routePlan.orderId, "route_ready");
+    await this.updateOrderStatus(routePlan.orderId, "route_ready");
   }
 
-  getDispatchInstruction(orderId: string): DispatchInstruction | undefined {
+  async getDispatchInstruction(orderId: string): Promise<DispatchInstruction | undefined> {
     return this.dispatchInstructions.get(orderId);
   }
 
-  saveDispatchInstruction(instruction: DispatchInstruction): void {
+  async saveDispatchInstruction(instruction: DispatchInstruction): Promise<void> {
     this.dispatchInstructions.set(instruction.orderId, instruction);
-    this.updateOrderStatus(instruction.orderId, "dispatching");
+    await this.updateOrderStatus(instruction.orderId, "dispatching");
   }
 
-  addOpsTicket(ticket: OpsTicket): void {
+  async addOpsTicket(ticket: OpsTicket): Promise<void> {
     const existing = this.opsTickets.get(ticket.orderId) ?? [];
     this.opsTickets.set(ticket.orderId, [...existing, ticket]);
-    this.updateOrderStatus(ticket.orderId, "awaiting_ops");
+    await this.updateOrderStatus(ticket.orderId, "awaiting_ops");
   }
 
-  getOpsTickets(orderId: string): OpsTicket[] {
+  async getOpsTickets(orderId: string): Promise<OpsTicket[]> {
     return this.opsTickets.get(orderId) ?? [];
   }
 
-  getSnapshot(orderId: string): OrderSnapshot | undefined {
+  async getSnapshot(orderId: string): Promise<OrderSnapshot | undefined> {
     const order = this.orders.get(orderId);
     if (!order) {
       return undefined;
@@ -190,12 +220,12 @@ export class InMemoryStore {
 
     return {
       order,
-      items: this.getOrderItems(orderId),
-      merchantTasks: this.getMerchantTasks(orderId),
-      vendorReports: this.getVendorReports(orderId),
-      routePlan: this.getRoutePlan(orderId),
-      dispatchInstruction: this.getDispatchInstruction(orderId),
-      opsTickets: this.getOpsTickets(orderId),
+      items: await this.getOrderItems(orderId),
+      merchantTasks: await this.getMerchantTasks(orderId),
+      vendorReports: await this.getVendorReports(orderId),
+      routePlan: await this.getRoutePlan(orderId),
+      dispatchInstruction: await this.getDispatchInstruction(orderId),
+      opsTickets: await this.getOpsTickets(orderId),
     };
   }
 }
