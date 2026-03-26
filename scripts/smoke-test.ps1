@@ -19,6 +19,29 @@ function Assert-True {
   }
 }
 
+function Get-RouteWithRetry {
+  param(
+    [string]$ApiBaseUrl,
+    [string]$OrderId,
+    [int]$MaxAttempts = 20,
+    [int]$SleepMs = 500
+  )
+
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+    try {
+      return Invoke-RestMethod -Uri "$ApiBaseUrl/api/v1/orders/$OrderId/route" -Method Get
+    }
+    catch {
+      if ($attempt -eq $MaxAttempts) {
+        throw
+      }
+      Start-Sleep -Milliseconds $SleepMs
+    }
+  }
+
+  throw "Route was not available after retries"
+}
+
 try {
   if (-not $UseExistingServer) {
     $queueDriver = $env:QUEUE_DRIVER
@@ -26,18 +49,13 @@ try {
       $queueDriver = "in-memory"
     }
 
-    $graphHopperKey = $env:GRAPH_HOPPER_API_KEY
-
     $serverJob = Start-Job -ScriptBlock {
-      param($repo, $port, $driver, $graphKey)
+      param($repo, $port, $driver)
       Set-Location $repo
       $env:ORDER_API_PORT = [string]$port
       $env:QUEUE_DRIVER = $driver
-      if (-not [string]::IsNullOrWhiteSpace($graphKey)) {
-        $env:GRAPH_HOPPER_API_KEY = $graphKey
-      }
       bun run dev
-    } -ArgumentList $repoRoot, $Port, $queueDriver, $graphHopperKey
+    } -ArgumentList $repoRoot, $Port, $queueDriver
 
     Start-Sleep -Seconds 3
   }
@@ -62,7 +80,7 @@ try {
   $snapshot = Invoke-RestMethod -Uri "$BaseUrl/api/v1/orders/$orderId" -Method Get
   Assert-True ($snapshot.order.id -eq $orderId) "snapshot order id mismatch"
 
-  $route = Invoke-RestMethod -Uri "$BaseUrl/api/v1/orders/$orderId/route" -Method Get
+  $route = Get-RouteWithRetry -ApiBaseUrl $BaseUrl -OrderId $orderId
   Assert-True ($route.stops.Count -ge 1) "route contains no stops"
 
   $cancel = Invoke-RestMethod -Uri "$BaseUrl/api/v1/orders/$orderId/cancel" -Method Post

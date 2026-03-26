@@ -4,6 +4,7 @@ import { createRuntimeContext, registerAllWorkers } from "../packages/core/src";
 
 const previousQueueDriver = Bun.env.QUEUE_DRIVER;
 const previousVendorMinConfidence = Bun.env.VENDOR_MIN_CONFIDENCE;
+const previousOsrmEnabled = Bun.env.OSRM_ENABLED;
 
 afterEach(() => {
   if (previousQueueDriver === undefined) {
@@ -17,12 +18,19 @@ afterEach(() => {
   } else {
     Bun.env.VENDOR_MIN_CONFIDENCE = previousVendorMinConfidence;
   }
+
+  if (previousOsrmEnabled === undefined) {
+    delete Bun.env.OSRM_ENABLED;
+  } else {
+    Bun.env.OSRM_ENABLED = previousOsrmEnabled;
+  }
 });
 
 describe("order orchestration flow", () => {
   it("creates an order and produces route + dispatch instruction", async () => {
     Bun.env.QUEUE_DRIVER = "in-memory";
     Bun.env.VENDOR_MIN_CONFIDENCE = "0";
+    Bun.env.OSRM_ENABLED = "false";
 
     const runtime = createRuntimeContext();
     registerAllWorkers(runtime);
@@ -66,6 +74,7 @@ describe("order orchestration flow", () => {
   it("cancels an order", async () => {
     Bun.env.QUEUE_DRIVER = "in-memory";
     Bun.env.VENDOR_MIN_CONFIDENCE = "0";
+    Bun.env.OSRM_ENABLED = "false";
 
     const runtime = createRuntimeContext();
     registerAllWorkers(runtime);

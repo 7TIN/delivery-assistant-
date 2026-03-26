@@ -18,6 +18,7 @@ type AnyQueuePayload = QueueEventMap[QueueEventName];
 
 export class BullMqQueueBroker implements QueueBroker {
   private readonly connection: IORedis;
+  private readonly redisDisplayUrl: string;
   private readonly queuePrefix: string;
   private readonly maxAttempts: number;
   private readonly baseBackoffMs: number;
@@ -42,15 +43,30 @@ export class BullMqQueueBroker implements QueueBroker {
       options.removeOnFailCount ?? Number(Bun.env.QUEUE_REMOVE_ON_FAIL_COUNT ?? 500);
 
     const redisUrl = options.redisUrl ?? Bun.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+    this.redisDisplayUrl = sanitizeRedisUrl(redisUrl);
 
     this.connection = new IORedis(redisUrl, {
       maxRetriesPerRequest: null,
       enableReadyCheck: true,
     });
 
-    this.connection.on("error", (error) => {
-      console.error("[bullmq] redis connection error", error);
+    this.connection.on("ready", () => {
+      console.info(`[bullmq] Redis connected (${this.redisDisplayUrl})`);
     });
+
+    this.connection.on("error", (error) => {
+      console.error(`[bullmq] Redis connection error (${this.redisDisplayUrl})`, error);
+    });
+
+    this.connection.on("end", () => {
+      console.warn(`[bullmq] Redis connection closed (${this.redisDisplayUrl})`);
+    });
+
+    this.connection.on("reconnecting", () => {
+      console.warn(`[bullmq] Redis reconnecting (${this.redisDisplayUrl})`);
+    });
+
+    void this.logInitialRedisStatus();
   }
 
   async publish<K extends QueueEventName>(
@@ -147,10 +163,35 @@ export class BullMqQueueBroker implements QueueBroker {
       },
     };
   }
+
+  private async logInitialRedisStatus(): Promise<void> {
+    try {
+      const pong = await this.connection.ping();
+      if (pong === "PONG") {
+        console.info(`[bullmq] Redis ping success (${this.redisDisplayUrl})`);
+      } else {
+        console.warn(`[bullmq] Redis ping unexpected response: ${pong}`);
+      }
+    } catch (error) {
+      console.error(`[bullmq] Redis not connected (${this.redisDisplayUrl})`, error);
+    }
+  }
 }
 
 function ensureNotClosed(closed: boolean): void {
   if (closed) {
     throw new Error("BullMqQueueBroker is closed");
+  }
+}
+
+function sanitizeRedisUrl(redisUrl: string): string {
+  try {
+    const parsed = new URL(redisUrl);
+    if (parsed.password) {
+      parsed.password = "***";
+    }
+    return parsed.toString();
+  } catch {
+    return redisUrl;
   }
 }

@@ -1,8 +1,14 @@
 import type { CreateOrderRequest } from "../../../packages/contracts/src";
-import { createRuntimeContext, registerAllWorkers } from "../../../packages/core/src";
+import { checkOsrmApiAvailability, createRuntimeContext, registerAllWorkers } from "../../../packages/core/src";
+import { resolveQueueDriver } from "../../../packages/queue/src";
+
+const queueDriver = resolveQueueDriver();
+console.info(`[startup] QUEUE_DRIVER=${queueDriver}`);
 
 const context = createRuntimeContext();
 registerAllWorkers(context);
+
+void logRoutingDiagnostics();
 
 const port = Number(Bun.env.ORDER_API_PORT ?? 3000);
 
@@ -72,6 +78,26 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   void stop("SIGTERM");
 });
+
+async function logRoutingDiagnostics(): Promise<void> {
+  const osrm = await checkOsrmApiAvailability();
+
+  if (!osrm.enabled) {
+    console.warn(`[routing] OSRM disabled: ${osrm.error}`);
+    return;
+  }
+
+  if (osrm.reachable) {
+    console.info(`[routing] OSRM API reachable (${osrm.baseUrl})`);
+    return;
+  }
+
+  console.warn(
+    `[routing] OSRM API not reachable (${osrm.baseUrl})${
+      osrm.error ? `, reason=${osrm.error}` : ""
+    }. Local fallback estimator will be used.`,
+  );
+}
 
 function matchOrderPath(path: string):
   | { orderId: string; action: "root" | "cancel" | "route" }

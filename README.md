@@ -19,10 +19,11 @@ cp .env.example .env
 Important values:
 
 - `ORDER_API_PORT=3000`
-- `QUEUE_DRIVER=in-memory` (default local mode)
-- `QUEUE_DRIVER=bullmq` (production queue mode)
+- `QUEUE_DRIVER=in-memory` or `QUEUE_DRIVER=bullmq`
+- `OSRM_ENABLED=true`
+- `OSRM_BASE_URL=https://router.project-osrm.org`
+- `OSRM_TIMEOUT_MS=2500`
 - `REDIS_URL=redis://localhost:6379` (required for BullMQ mode)
-- `GRAPH_HOPPER_API_KEY=<optional>`
 - `VENDOR_MIN_CONFIDENCE=0.65`
 
 ## Run (in-memory mode)
@@ -35,14 +36,18 @@ bun run dev
 ## Run (BullMQ mode)
 
 1. Start Redis.
-2. Set `QUEUE_DRIVER=bullmq` (and `REDIS_URL` if non-default).
+2. Set `QUEUE_DRIVER=bullmq`.
 3. Run:
 
 ```bash
 bun run dev
 ```
 
-API base URL: `http://localhost:3000`
+## Startup logs you now get
+
+- Which queue driver is active (`bullmq` or `in-memory`).
+- Redis connection status (`connected`, `ping success`, reconnect/error/closed).
+- OSRM API availability (`reachable` or fallback warning).
 
 ## Endpoints
 
@@ -59,4 +64,3 @@ bun run smoke:test
 ```
 
 This starts the API in background, runs full flow checks, and prints JSON results.
-
