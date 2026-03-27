@@ -9,6 +9,7 @@ const DEFAULT_FAILURE_THRESHOLD = 3;
 const DEFAULT_COOLDOWN_MS = 60000;
 const DEFAULT_CACHE_TTL_MS = 300000;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 4;
+const DEFAULT_LOG_FAILED_ROUTE_URL = true;
 const COOLDOWN_LOG_INTERVAL_MS = 15000;
 
 export interface TravelEstimator {
@@ -99,6 +100,12 @@ export class OsrmTravelEstimator implements TravelEstimator {
       const reason = normalizeError(error);
       this.consecutiveFailures += 1;
 
+      if (shouldLogFailedRouteUrl()) {
+        console.warn(
+          `[osrm] route request failed url=${url} from=${from.lat},${from.lng} to=${to.lat},${to.lng} timeoutMs=${formatTimeoutMs(this.timeoutMs)} reason=${reason}`,
+        );
+      }
+
       const threshold = getOsrmFailureThreshold();
       const shouldCooldown = reason.includes("HTTP 429") || this.consecutiveFailures >= threshold;
 
@@ -182,11 +189,20 @@ export function getOsrmBaseUrl(): string {
   return (Bun.env.OSRM_BASE_URL ?? DEFAULT_OSRM_BASE_URL).replace(/\/+$/, "");
 }
 
-export function getOsrmTimeoutMs(): number {
+export function getOsrmTimeoutMs(): number | undefined {
+  if (isOsrmTimeoutDisabled()) {
+    return undefined;
+  }
+
   const parsed = Number(Bun.env.OSRM_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  if (!Number.isFinite(parsed)) {
     return DEFAULT_TIMEOUT_MS;
   }
+
+  if (parsed <= 0) {
+    return undefined;
+  }
+
   return Math.floor(parsed);
 }
 
@@ -204,7 +220,7 @@ export async function checkOsrmApiAvailability(): Promise<OsrmAvailabilityResult
 
   const retries = getOsrmHealthRetries();
   const retryDelayMs = getOsrmHealthRetryDelayMs();
-  const timeoutMs = getOsrmTimeoutMs();
+  const timeoutMs = getOsrmTimeoutMs() ?? DEFAULT_TIMEOUT_MS;
   const candidateBaseUrls = getCandidateBaseUrls(configuredBaseUrl);
 
   let lastFailure: OsrmAvailabilityResult | undefined;
@@ -365,7 +381,44 @@ function getOsrmMaxConcurrentRequests(): number {
   return Math.floor(parsed);
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+function isOsrmTimeoutDisabled(): boolean {
+  return parseBoolean(Bun.env.OSRM_DISABLE_TIMEOUT, false);
+}
+
+function shouldLogFailedRouteUrl(): boolean {
+  return parseBoolean(Bun.env.OSRM_LOG_FAILED_ROUTE_URL, DEFAULT_LOG_FAILED_ROUTE_URL);
+}
+
+function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes") {
+    return true;
+  }
+
+  if (normalized === "false" || normalized === "0" || normalized === "no") {
+    return false;
+  }
+
+  return defaultValue;
+}
+
+function formatTimeoutMs(timeoutMs: number | undefined): string {
+  if (timeoutMs === undefined) {
+    return "disabled";
+  }
+
+  return String(timeoutMs);
+}
+
+async function fetchWithTimeout(url: string, timeoutMs?: number): Promise<Response> {
+  if (timeoutMs === undefined) {
+    return fetch(url);
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
