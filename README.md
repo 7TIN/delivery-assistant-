@@ -25,7 +25,13 @@ Important values:
 - `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/delivery`
 - `OSRM_ENABLED=true`
 - `OSRM_BASE_URL=https://router.project-osrm.org`
-- `OSRM_TIMEOUT_MS=10000`\n- `OSRM_HEALTH_RETRIES=3`\n- `OSRM_HEALTH_RETRY_DELAY_MS=600`
+- `OSRM_TIMEOUT_MS=10000`
+- `OSRM_HEALTH_RETRIES=3`
+- `OSRM_HEALTH_RETRY_DELAY_MS=600`
+- `OSRM_FAILURE_THRESHOLD=3`
+- `OSRM_COOLDOWN_MS=60000`
+- `OSRM_CACHE_TTL_MS=300000`
+- `OSRM_MAX_CONCURRENT_REQUESTS=4`
 - `REDIS_URL=redis://localhost:6379` (required for BullMQ mode)
 - `VENDOR_MIN_CONFIDENCE=0.65`
 
@@ -71,7 +77,7 @@ bun run dev
 bun run dev
 ```
 
-## Startup logs you now get
+## Startup logs
 
 - Queue driver (`bullmq` or `in-memory`).
 - Repository driver (`prisma` or `memory`).
@@ -85,6 +91,13 @@ bun run dev
 - `GET /api/v1/orders/:orderId`
 - `GET /api/v1/orders/:orderId/route`
 - `POST /api/v1/orders/:orderId/cancel`
+- `GET /api/v1/users/:userId/routes`
+
+## Notes on OSRM timeouts
+
+If you run many concurrent orders against the public endpoint (`router.project-osrm.org`), you can hit timeouts/rate limits.
+This project now throttles and caches OSRM estimates, and automatically falls back to local estimation during cooldown.
+For heavy load tests, prefer running your own OSRM server and set `OSRM_BASE_URL` to that instance.
 
 ## Smoke test
 
@@ -93,4 +106,3 @@ bun run smoke:test
 ```
 
 This starts the API in background, runs full flow checks, and prints JSON results.
-

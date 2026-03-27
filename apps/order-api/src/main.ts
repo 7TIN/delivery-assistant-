@@ -29,6 +29,16 @@ const server = Bun.serve({
         return json(response, 201);
       }
 
+      const userRoutesMatch = matchUserRoutesPath(path);
+      if (userRoutesMatch && request.method === "GET") {
+        const summaries = await context.services.orderApi.getUserOrderRouteSummaries(userRoutesMatch.userId);
+        return json({
+          userId: userRoutesMatch.userId,
+          count: summaries.length,
+          orders: summaries,
+        });
+      }
+
       const orderMatch = matchOrderPath(path);
       if (orderMatch && request.method === "GET" && orderMatch.action === "root") {
         const snapshot = await context.services.orderApi.getOrderSnapshot(orderMatch.orderId);
@@ -121,6 +131,15 @@ function matchOrderPath(path: string):
   return undefined;
 }
 
+function matchUserRoutesPath(path: string): { userId: string } | undefined {
+  const userRoutes = path.match(/^\/api\/v1\/users\/([^/]+)\/routes$/);
+  if (userRoutes?.[1]) {
+    return { userId: userRoutes[1] };
+  }
+
+  return undefined;
+}
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), {
     status,
@@ -129,3 +148,5 @@ function json(data: unknown, status = 200): Response {
     },
   });
 }
+
+

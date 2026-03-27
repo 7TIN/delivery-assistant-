@@ -137,3 +137,16 @@ export interface OrderSnapshot {
   opsTickets: OpsTicket[];
 }
 
+
+export interface UserOrderRouteSummary {
+  orderId: string;
+  status: OrderStatus;
+  deliveryLocation: DeliveryLocation;
+  merchantLocations: Array<{
+    merchantId: string;
+    taskStatus: MerchantTaskStatus;
+    location: GeoPoint;
+  }>;
+  routePlan?: RoutePlan;
+  dispatchInstruction?: DispatchInstruction;
+}

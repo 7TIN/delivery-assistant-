@@ -22,9 +22,9 @@ export class PrismaStore implements OrderStore {
     const now = new Date();
     const orderId = crypto.randomUUID();
 
+    // Nested relation create inherits parent order id automatically.
     const items = request.items.map((item) => ({
       id: crypto.randomUUID(),
-      orderId,
       itemId: item.itemId,
       name: item.name,
       category: item.category,
@@ -33,9 +33,9 @@ export class PrismaStore implements OrderStore {
       status: "created",
     }));
 
+    // Nested relation create inherits parent order id automatically.
     const merchantTasks = buildMerchantTasks(orderId, request).map((task) => ({
       id: task.id,
-      orderId,
       merchantId: task.merchantId,
       merchantLat: task.merchantLocation.lat,
       merchantLng: task.merchantLocation.lng,
@@ -69,6 +69,16 @@ export class PrismaStore implements OrderStore {
   async getOrder(orderId: string): Promise<Order | undefined> {
     const row = await this.prisma.order.findUnique({ where: { id: orderId } });
     return row ? mapOrder(row) : undefined;
+  }
+
+  async listOrderIdsByUser(userId: string): Promise<string[]> {
+    const rows = await this.prisma.order.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+
+    return rows.map((row) => row.id);
   }
 
   async updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
@@ -211,8 +221,20 @@ export class PrismaStore implements OrderStore {
 
   async saveRoutePlan(routePlan: RoutePlan): Promise<void> {
     await this.prisma.$transaction([
-      this.prisma.routePlan.create({
-        data: {
+      this.prisma.routePlan.upsert({
+        where: {
+          orderId_version: {
+            orderId: routePlan.orderId,
+            version: routePlan.version,
+          },
+        },
+        update: {
+          stops: routePlan.stops as any,
+          estimatedCompletionAt: new Date(routePlan.estimatedCompletionAt),
+          objectiveScore: routePlan.objectiveScore,
+          generatedAt: new Date(routePlan.generatedAt),
+        },
+        create: {
           id: crypto.randomUUID(),
           orderId: routePlan.orderId,
           version: routePlan.version,
@@ -464,4 +486,5 @@ function buildMerchantTasks(orderId: string, request: CreateOrderRequest): Merch
 
   return tasks;
 }
+
 

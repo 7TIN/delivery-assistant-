@@ -5,6 +5,11 @@ const DEFAULT_OSRM_BASE_URL = "https://router.project-osrm.org";
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_HEALTH_RETRIES = 3;
 const DEFAULT_HEALTH_RETRY_DELAY_MS = 600;
+const DEFAULT_FAILURE_THRESHOLD = 3;
+const DEFAULT_COOLDOWN_MS = 60000;
+const DEFAULT_CACHE_TTL_MS = 300000;
+const DEFAULT_MAX_CONCURRENT_REQUESTS = 4;
+const COOLDOWN_LOG_INTERVAL_MS = 15000;
 
 export interface TravelEstimator {
   estimateMinutes(from: GeoPoint, to: GeoPoint): Promise<number>;
@@ -27,6 +32,16 @@ export class LocalTravelEstimator implements TravelEstimator {
 
 export class OsrmTravelEstimator implements TravelEstimator {
   private readonly fallback = new LocalTravelEstimator();
+  private readonly requestCache = new Map<string, { minutes: number; expiresAt: number }>();
+  private readonly cacheTtlMs = getOsrmCacheTtlMs();
+  private readonly maxConcurrentRequests = getOsrmMaxConcurrentRequests();
+
+  private inFlightRequests = 0;
+  private readonly pendingResolvers: Array<() => void> = [];
+
+  private consecutiveFailures = 0;
+  private cooldownUntil = 0;
+  private lastCooldownLogAt = 0;
 
   constructor(
     private readonly baseUrl = getOsrmBaseUrl(),
@@ -34,28 +49,126 @@ export class OsrmTravelEstimator implements TravelEstimator {
   ) {}
 
   async estimateMinutes(from: GeoPoint, to: GeoPoint): Promise<number> {
+    const cacheKey = buildEstimateCacheKey(from, to);
+    const cachedMinutes = this.getCachedEstimate(cacheKey);
+    if (cachedMinutes !== undefined) {
+      return cachedMinutes;
+    }
+
+    const now = Date.now();
+
+    if (now < this.cooldownUntil) {
+      if (now - this.lastCooldownLogAt >= COOLDOWN_LOG_INTERVAL_MS) {
+        const secondsLeft = Math.ceil((this.cooldownUntil - now) / 1000);
+        console.warn(`OSRM in cooldown for ${secondsLeft}s, using local fallback`);
+        this.lastCooldownLogAt = now;
+      }
+
+      const fallbackMinutes = await this.fallback.estimateMinutes(from, to);
+      this.setCachedEstimate(cacheKey, fallbackMinutes, Math.min(this.cacheTtlMs, 15000));
+      return fallbackMinutes;
+    }
+
     const url = buildOsrmRouteUrl(this.baseUrl, from, to);
 
     try {
-      const response = await fetchWithTimeout(url, this.timeoutMs);
-      if (!response.ok) {
-        throw new Error(`OSRM request failed: HTTP ${response.status}`);
-      }
+      const minutes = await this.runWithConcurrencySlot(async () => {
+        const response = await fetchWithTimeout(url, this.timeoutMs);
+        if (!response.ok) {
+          throw new Error(`OSRM request failed: HTTP ${response.status}`);
+        }
 
-      const data = (await response.json()) as {
-        code?: string;
-        routes?: Array<{ duration?: number }>;
-      };
+        const data = (await response.json()) as {
+          code?: string;
+          routes?: Array<{ duration?: number }>;
+        };
 
-      const durationSec = data.routes?.[0]?.duration;
-      if (data.code !== "Ok" || !durationSec || Number.isNaN(durationSec)) {
-        throw new Error("OSRM response missing route duration");
-      }
+        const durationSec = data.routes?.[0]?.duration;
+        if (data.code !== "Ok" || !durationSec || Number.isNaN(durationSec)) {
+          throw new Error("OSRM response missing route duration");
+        }
 
-      return Math.max(1, Math.round(durationSec / 60));
+        return Math.max(1, Math.round(durationSec / 60));
+      });
+
+      this.consecutiveFailures = 0;
+      this.cooldownUntil = 0;
+      this.setCachedEstimate(cacheKey, minutes, this.cacheTtlMs);
+      return minutes;
     } catch (error) {
-      console.warn(`OSRM estimate failed (${normalizeError(error)}), using local fallback`);
-      return this.fallback.estimateMinutes(from, to);
+      const reason = normalizeError(error);
+      this.consecutiveFailures += 1;
+
+      const threshold = getOsrmFailureThreshold();
+      const shouldCooldown = reason.includes("HTTP 429") || this.consecutiveFailures >= threshold;
+
+      if (shouldCooldown) {
+        this.cooldownUntil = Date.now() + getOsrmCooldownMs();
+        console.warn(
+          `OSRM disabled temporarily after ${this.consecutiveFailures} failures (${reason}), using local fallback`,
+        );
+        this.lastCooldownLogAt = Date.now();
+      } else {
+        console.warn(`OSRM estimate failed (${reason}), using local fallback`);
+      }
+
+      const fallbackMinutes = await this.fallback.estimateMinutes(from, to);
+      this.setCachedEstimate(cacheKey, fallbackMinutes, Math.min(this.cacheTtlMs, 30000));
+      return fallbackMinutes;
+    }
+  }
+
+  private getCachedEstimate(key: string): number | undefined {
+    const entry = this.requestCache.get(key);
+    if (!entry) {
+      return undefined;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      this.requestCache.delete(key);
+      return undefined;
+    }
+
+    return entry.minutes;
+  }
+
+  private setCachedEstimate(key: string, minutes: number, ttlMs: number): void {
+    this.requestCache.set(key, {
+      minutes,
+      expiresAt: Date.now() + Math.max(1000, ttlMs),
+    });
+  }
+
+  private async runWithConcurrencySlot<T>(task: () => Promise<T>): Promise<T> {
+    await this.acquireConcurrencySlot();
+
+    try {
+      return await task();
+    } finally {
+      this.releaseConcurrencySlot();
+    }
+  }
+
+  private async acquireConcurrencySlot(): Promise<void> {
+    if (this.inFlightRequests < this.maxConcurrentRequests) {
+      this.inFlightRequests += 1;
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      this.pendingResolvers.push(() => {
+        this.inFlightRequests += 1;
+        resolve();
+      });
+    });
+  }
+
+  private releaseConcurrencySlot(): void {
+    this.inFlightRequests = Math.max(0, this.inFlightRequests - 1);
+
+    const next = this.pendingResolvers.shift();
+    if (next) {
+      next();
     }
   }
 }
@@ -186,6 +299,14 @@ function buildOsrmRouteUrl(baseUrl: string, from: GeoPoint, to: GeoPoint): strin
   return `${baseUrl}/route/v1/driving/${coordinates}?${query.toString()}`;
 }
 
+function buildEstimateCacheKey(from: GeoPoint, to: GeoPoint): string {
+  return `${roundCoord(from.lat)},${roundCoord(from.lng)}->${roundCoord(to.lat)},${roundCoord(to.lng)}`;
+}
+
+function roundCoord(value: number): string {
+  return value.toFixed(5);
+}
+
 function getCandidateBaseUrls(baseUrl: string): string[] {
   const candidates = [baseUrl];
 
@@ -208,6 +329,38 @@ function getOsrmHealthRetryDelayMs(): number {
   const parsed = Number(Bun.env.OSRM_HEALTH_RETRY_DELAY_MS ?? DEFAULT_HEALTH_RETRY_DELAY_MS);
   if (!Number.isFinite(parsed) || parsed < 0) {
     return DEFAULT_HEALTH_RETRY_DELAY_MS;
+  }
+  return Math.floor(parsed);
+}
+
+function getOsrmFailureThreshold(): number {
+  const parsed = Number(Bun.env.OSRM_FAILURE_THRESHOLD ?? DEFAULT_FAILURE_THRESHOLD);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_FAILURE_THRESHOLD;
+  }
+  return Math.floor(parsed);
+}
+
+function getOsrmCooldownMs(): number {
+  const parsed = Number(Bun.env.OSRM_COOLDOWN_MS ?? DEFAULT_COOLDOWN_MS);
+  if (!Number.isFinite(parsed) || parsed < 1000) {
+    return DEFAULT_COOLDOWN_MS;
+  }
+  return Math.floor(parsed);
+}
+
+function getOsrmCacheTtlMs(): number {
+  const parsed = Number(Bun.env.OSRM_CACHE_TTL_MS ?? DEFAULT_CACHE_TTL_MS);
+  if (!Number.isFinite(parsed) || parsed < 1000) {
+    return DEFAULT_CACHE_TTL_MS;
+  }
+  return Math.floor(parsed);
+}
+
+function getOsrmMaxConcurrentRequests(): number {
+  const parsed = Number(Bun.env.OSRM_MAX_CONCURRENT_REQUESTS ?? DEFAULT_MAX_CONCURRENT_REQUESTS);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_MAX_CONCURRENT_REQUESTS;
   }
   return Math.floor(parsed);
 }

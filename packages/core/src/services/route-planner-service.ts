@@ -1,7 +1,7 @@
-import type { RoutePlan, RouteStop, VendorReport } from "../../../contracts/src";
+import type { MerchantTask, RoutePlan, RouteStop, VendorReport } from "../../../contracts/src";
 import type { QueueBroker } from "../../../queue/src";
-import type { OrderStore } from "../store";
 import type { TravelEstimator } from "../routing/travel-estimator";
+import type { OrderStore } from "../store";
 import { estimateTravelMinutes, haversineKm, isoNow } from "../utils";
 
 interface CandidateStop {
@@ -48,7 +48,7 @@ export class RoutePlannerService {
 }
 
 function buildCandidateStops(
-  merchantTasks: Array<{ merchantId: string; merchantLocation: { lat: number; lng: number } }>,
+  merchantTasks: MerchantTask[],
   vendorReports: VendorReport[],
 ): CandidateStop[] {
   const reportByMerchant = new Map<string, VendorReport>();
@@ -58,8 +58,12 @@ function buildCandidateStops(
 
   const candidates: CandidateStop[] = [];
   for (const task of merchantTasks) {
+    if (task.taskStatus === "failed" || task.taskStatus === "canceled") {
+      continue;
+    }
+
     const report = reportByMerchant.get(task.merchantId);
-    if (!report) {
+    if (!report || report.availability === "unavailable") {
       continue;
     }
 

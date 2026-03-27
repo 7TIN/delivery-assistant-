@@ -21,7 +21,7 @@ V1 is backend only. Customer and rider app UI implementation is out of scope.
 | Scope | Backend core only | Fastest path to prove orchestration and routing quality |
 | Architecture | Microservices | Clear ownership and independent scaling for orchestration-heavy workloads |
 | Queue/Event Backbone | Redis + BullMQ | Mature TypeScript ecosystem and quick MVP setup |
-| Routing Provider | GraphHopper | Open-source-aligned routing stack with production-ready APIs |
+| Routing Provider | OSRM | Open-source-aligned routing stack with production-ready APIs |
 | Vendor Confirmation | AI calls/chats from day 1 + human ops fallback | Enables coverage for non-API merchants while preserving reliability |
 
 ## 3) Service Map and Responsibilities
@@ -47,7 +47,7 @@ V1 is backend only. Customer and rider app UI implementation is out of scope.
   - Emit `route.plan.requested`.
 
 - `route-planner`
-  - Build and re-build pickup sequences using GraphHopper travel estimates.
+  - Build and re-build pickup sequences using OSRM travel estimates.
   - Optimize for total completion time with waiting/lateness penalties.
   - Emit `route.plan.updated`.
 
@@ -86,4 +86,5 @@ These KPIs are tracked per city/zone and by merchant category.
 - Advanced split-delivery optimization (multiple riders on one order).
 - Dynamic pricing, surge logic, and promotions engine.
 - Fully autonomous AI dispatch decisions without deterministic constraints.
+
 

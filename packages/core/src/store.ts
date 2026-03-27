@@ -15,6 +15,7 @@ import { addMinutes, isoNow, pseudoMerchantLocation } from "./utils";
 export interface OrderStore {
   createOrder(request: CreateOrderRequest): Promise<Order>;
   getOrder(orderId: string): Promise<Order | undefined>;
+  listOrderIdsByUser(userId: string): Promise<string[]>;
   updateOrderStatus(orderId: string, status: OrderStatus): Promise<void>;
   cancelOrder(orderId: string): Promise<Order | undefined>;
   getOrderItems(orderId: string): Promise<OrderItem[]>;
@@ -84,6 +85,13 @@ export class InMemoryStore implements OrderStore {
 
   async getOrder(orderId: string): Promise<Order | undefined> {
     return this.orders.get(orderId);
+  }
+
+  async listOrderIdsByUser(userId: string): Promise<string[]> {
+    return [...this.orders.values()]
+      .filter((order) => order.userId === userId)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .map((order) => order.id);
   }
 
   async updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
@@ -254,3 +262,5 @@ function buildMerchantTasks(orderId: string, request: CreateOrderRequest): Merch
 
   return tasks;
 }
+
+

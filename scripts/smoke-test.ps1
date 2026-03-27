@@ -90,6 +90,9 @@ try {
   $snapshot = Invoke-RestMethod -Uri "$BaseUrl/api/v1/orders/$orderId" -Method Get
   Assert-True ($snapshot.order.id -eq $orderId) "snapshot order id mismatch"
 
+  $userRoutes = Invoke-RestMethod -Uri "$BaseUrl/api/v1/users/usr_e2e/routes" -Method Get
+  Assert-True ($userRoutes.count -ge 1) "user routes endpoint returned no orders"
+
   $route = Get-RouteWithRetry -ApiBaseUrl $BaseUrl -OrderId $orderId
   Assert-True ($route.stops.Count -ge 1) "route contains no stops"
 
@@ -103,6 +106,7 @@ try {
     snapshotStatus = $snapshot.order.status
     routeVersion = $route.version
     routeStops = $route.stops.Count
+    userRoutesCount = $userRoutes.count
     cancelStatus = $cancel.status
   }
 
@@ -116,4 +120,3 @@ finally {
     Remove-Job -Job $serverJob -ErrorAction SilentlyContinue | Out-Null
   }
 }
-

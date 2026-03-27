@@ -3,6 +3,7 @@ import type {
   CreateOrderResponse,
   OrderSnapshot,
   RoutePlan,
+  UserOrderRouteSummary,
 } from "../../../contracts/src";
 import type { QueueBroker } from "../../../queue/src";
 import type { OrderStore } from "../store";
@@ -34,6 +35,30 @@ export class OrderApiService {
 
   async getOrderSnapshot(orderId: string): Promise<OrderSnapshot | undefined> {
     return this.store.getSnapshot(orderId);
+  }
+
+  async getUserOrderRouteSummaries(userId: string): Promise<UserOrderRouteSummary[]> {
+    if (!userId) {
+      throw new Error("userId is required");
+    }
+
+    const orderIds = await this.store.listOrderIdsByUser(userId);
+    const snapshots = await Promise.all(orderIds.map((orderId) => this.store.getSnapshot(orderId)));
+
+    return snapshots
+      .filter((snapshot): snapshot is OrderSnapshot => Boolean(snapshot))
+      .map((snapshot) => ({
+        orderId: snapshot.order.id,
+        status: snapshot.order.status,
+        deliveryLocation: snapshot.order.deliveryLocation,
+        merchantLocations: snapshot.merchantTasks.map((task) => ({
+          merchantId: task.merchantId,
+          taskStatus: task.taskStatus,
+          location: task.merchantLocation,
+        })),
+        routePlan: snapshot.routePlan,
+        dispatchInstruction: snapshot.dispatchInstruction,
+      }));
   }
 
   async cancelOrder(orderId: string): Promise<{ orderId: string; status: string } | undefined> {
@@ -72,3 +97,5 @@ function validateCreateOrder(request: CreateOrderRequest): void {
     }
   }
 }
+
+

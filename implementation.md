@@ -2,9 +2,7 @@
 
 ## 1) Repo and Service Bootstrap Plan
 
-Use a Bun + TypeScript monorepo with service-local runtime packages and a shared contracts package.
-
-Suggested layout:
+Use a Bun + TypeScript monorepo with one service per app and shared contracts.
 
 ```text
 /apps
@@ -16,227 +14,157 @@ Suggested layout:
   /dispatch
   /ops-fallback
 /packages
-  /contracts          # shared types, queue names, schema validators
-  /queue              # BullMQ producers/consumers, retry helpers
-  /telemetry          # logging, tracing, metrics wrappers
+  /contracts
+  /queue
+  /core
 ```
 
-Common service baseline (all services):
+Common baseline for each service:
 
-- HTTP health endpoint (`/health`).
-- Structured logs with `orderId`, `merchantId`, `traceId`.
-- Redis connection and queue worker registration.
-- Idempotency guard on event handling.
+- `GET /health`
+- structured logs with `orderId`, `merchantId`, `traceId`
+- queue registration (BullMQ or in-memory)
+- idempotent event handlers
 
 ## 2) Public API Contracts (V1)
 
 ### `POST /api/v1/orders`
 
-Purpose: create a multi-merchant order and trigger orchestration.
+Creates a multi-merchant order and starts orchestration.
 
-Request (shape):
-
-```json
-{
-  "userId": "usr_123",
-  "deliveryLocation": { "lat": 12.9716, "lng": 77.5946, "address": "..." },
-  "items": [
-    {
-      "itemId": "itm_1",
-      "name": "Milk",
-      "category": "grocery",
-      "merchantId": "m_grocery_1",
-      "quantity": 2
-    }
-  ]
-}
-```
-
-Response:
-
-- `201 Created` with `orderId`, `status=created`, `merchantTaskCount`, `createdAt`.
+Response: `201` with `orderId`, `status`, `merchantTaskCount`, `createdAt`.
 
 ### `GET /api/v1/orders/:orderId`
 
-Purpose: fetch orchestration state.
+Returns orchestration snapshot:
 
-Response includes:
-
-- order status,
-- per-merchant task status,
-- latest vendor reports,
-- active route plan reference (if available),
-- ops fallback tickets (if any).
+- order status
+- merchant task statuses
+- vendor reports
+- latest route plan
+- dispatch instruction
+- ops tickets
 
 ### `POST /api/v1/orders/:orderId/cancel`
 
-Purpose: cancel full order (or partial lines when already split by merchant task).
-
-Behavior:
-
-- if dispatch not started: mark canceled and stop future tasks.
-- if dispatch started: best-effort cancel unresolved merchant tasks, preserve audit trail.
+Cancels the order.
 
 ### `GET /api/v1/orders/:orderId/route`
 
-Purpose: return latest route guidance snapshot.
+Returns latest route plan for an order.
 
-Response includes:
+### `GET /api/v1/users/:userId/routes`
 
-- ordered waypoints,
-- ETA per stop,
-- recommended next stop,
-- route version and update timestamp.
+Returns all orders for one user with delivery location, merchant task locations, route plan, and dispatch instruction.
 
 ## 3) Internal Contracts (Types and Events)
 
 ### Core Types in `packages/contracts`
 
 - `Order`
-  - `id`, `userId`, `status`, `deliveryLocation`, `createdAt`, `updatedAt`.
 - `OrderItem`
-  - `id`, `orderId`, `merchantId`, `category`, `quantity`, `status`.
 - `MerchantTask`
-  - `id`, `orderId`, `merchantId`, `taskStatus`, `attemptCount`, `deadlineAt`.
 - `VendorReport`
-  - `orderId`, `merchantId`, `availability`, `etaReadyAt`, `confidence`, `source`, `reportedAt`.
 - `RoutePlan`
-  - `orderId`, `version`, `stops`, `estimatedCompletionAt`, `objectiveScore`, `generatedAt`.
 - `DispatchInstruction`
-  - `orderId`, `routeVersion`, `nextStop`, `pickupNotes`, `etaToNextStop`, `issuedAt`.
 - `OpsTicket`
-  - `id`, `orderId`, `merchantId`, `reason`, `priority`, `status`, `createdAt`, `resolvedAt`.
+- `UserOrderRouteSummary`
 
 ### BullMQ Queue/Event Contracts
 
 - `order.created`
-  - producer: `order-api`
-  - consumer: `orchestrator`
-
 - `vendor.check.requested`
-  - producer: `orchestrator`
-  - consumer: `vendor-agent`
-
 - `vendor.report.ready`
-  - producer: `vendor-agent`
-  - consumer: `report-aggregator`
-
 - `route.plan.requested`
-  - producer: `report-aggregator`
-  - consumer: `route-planner`
-
 - `route.plan.updated`
-  - producer: `route-planner`
-  - consumer: `dispatch`
-
 - `ops.ticket.created`
-  - producer: `vendor-agent` or `orchestrator`
-  - consumer: `ops-fallback`
 
-Queue policy defaults:
+Queue defaults:
 
-- retries: exponential backoff, max 3 attempts.
-- dead-letter queue for terminal failures.
-- idempotency key: `eventName + orderId + merchantId + routeVersion?`.
+- retry policy: exponential backoff, 3 attempts
+- dead-letter handling for terminal failure
+- idempotency key pattern: `eventName + orderId + merchantId + routeVersion?`
 
 ## 4) Routing and Vendor Confirmation Policy
 
 ### Route Optimization Policy
 
-Objective function:
+Objective:
 
-`minimize(total_travel_time + waiting_time + lateness_penalty)`
+`minimize(travel_time + wait_time + lateness_penalty)`
 
 Inputs:
 
-- merchant coordinates,
-- readiness windows (`etaReadyAt`),
-- rider current location,
-- delivery location,
-- GraphHopper route/travel estimates.
+- merchant coordinates
+- readiness windows (`etaReadyAt`)
+- rider position approximation
+- delivery location
+- OSRM travel estimates (with local fallback)
 
 Replan triggers:
 
-- vendor reports prep delay beyond threshold,
-- traffic spike increases ETA beyond threshold,
-- no-response vendor reaches timeout and changes task state.
-
-Output requirement:
-
-- deterministic stop sequence with versioning (`routePlan.version`).
+- delayed prep window
+- traffic/ETA spike
+- no-response vendor
 
 ### AI Vendor Confirmation Policy
 
-Flow per merchant task:
+Per merchant task:
 
-1. Attempt automated AI confirmation (call/chat/API adapter).
-2. Parse and normalize outcome into `VendorReport`.
-3. If confidence below threshold or explicit failure:
-   - retry with exponential backoff (max 3),
-   - if still unresolved, emit `ops.ticket.created`.
+1. attempt AI call/chat/API confirmation
+2. normalize into `VendorReport`
+3. if low confidence/failure:
+   - retry with backoff
+   - emit `ops.ticket.created` after max retries
 
 Rules:
 
-- low-confidence reports are never silently accepted.
-- human ops resolution can overwrite vendor report and trigger replan.
-- orchestration continues for other merchants while one merchant is under ops review.
+- low-confidence reports are not silently accepted
+- ops can override report and trigger replan
+- orchestration of other merchants continues in parallel
 
 ## 5) Milestone Execution Order
 
 1. Shared contracts + queue/event skeleton
-   - Define all types/events.
-   - Implement queue clients, producers, consumers, retry/dead-letter.
-
 2. Order API + orchestrator
-   - Create order endpoints and persistence.
-   - Emit `order.created`; fan out `vendor.check.requested`.
-
 3. Vendor agent + report aggregator
-   - Build AI confirmation adapters and normalization.
-   - Aggregate reports, maintain readiness snapshot, emit `route.plan.requested`.
-
-4. GraphHopper route planner + dynamic replan
-   - Integrate GraphHopper matrix/route calls.
-   - Produce route versions and publish `route.plan.updated`.
-
+4. OSRM route planner + dynamic replan
 5. Ops fallback + observability + KPI dashboards
-   - Implement `ops.ticket.created` workflow and manual resolution endpoints.
-   - Add metrics panels for KPI targets from `plan.md`.
 
 ## 6) Test Plan and Acceptance Criteria
 
 ### Contract Tests
 
-- Validate request/response schemas for all public APIs.
-- Validate event payload schema compatibility across producers/consumers.
+- validate request/response schema for all public APIs
+- validate event payload compatibility across services
 
 ### Workflow Integration Tests
 
-- all vendors ready quickly -> one stable route produced.
-- one vendor delayed -> route replan produced with incremented version.
-- AI confirmation fails -> `OpsTicket` created and order remains active.
-- one item unavailable -> partial-order handling reflected in route and status.
+- all vendors ready quickly
+- one vendor delayed and route replans
+- AI confirmation fails and ops ticket is created
+- one item unavailable and partial path is handled
 
 ### Routing Behavior Tests
 
-- food prep window is used productively (other ready stops first).
-- planner avoids early-arrival idle waiting when alternative sequence exists.
+- food prep window is used by scheduling other pickups first
+- planner avoids early idle waiting when alternatives exist
 
 ### Reliability Tests
 
-- duplicate event delivery does not duplicate state transitions.
-- retries/backoff work and dead-letter receives terminal failures.
+- duplicate event delivery stays idempotent
+- retries and dead-letter handling work
 
 ### Acceptance Criteria
 
-- `plan.md` and `implementation.md` are decision-complete.
-- Engineering can begin service scaffolding without additional architecture decisions.
-- Fallback and failure policies are explicit and testable.
+- docs are executable without extra architecture decisions
+- route + fallback behavior is deterministic and testable
 
 ## 7) Assumptions and Defaults
 
-- Runtime remains Bun + TypeScript.
-- GraphHopper is the route/travel estimation provider for v1.
-- AI vendor confirmation is mandatory in v1, with human fallback mandatory.
-- Missing decision default: deterministic routing/dispatch behavior over autonomous AI control.
-
+- runtime: Bun + TypeScript
+- routing provider: OSRM APIs for v1
+- AI vendor confirmation enabled in v1
+- human ops fallback mandatory
+- if unclear, use deterministic dispatch/routing over autonomous AI behavior
+git 
