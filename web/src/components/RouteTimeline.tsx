@@ -1,41 +1,45 @@
-import type { RoutePlan } from "@/types/contracts";
-import { MerchantIcon } from "./MerchantIcon";
+import type { DisplayRouteStop } from "@/lib/order-presenters";
+import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export function RouteTimeline({ plan }: { plan: RoutePlan }) {
+import { MerchantIcon } from "./MerchantIcon";
+
+export function RouteTimeline({ stops }: { stops: DisplayRouteStop[] }) {
   return (
     <div className="space-y-0">
-      {plan.stops.map((stop, i) => {
-        const isActive = stop.status === "arrived";
-        const isDone = stop.status === "picked_up";
+      {stops.map((stop, index) => {
+        const isActive = stop.state === "active";
+        const isDone = stop.state === "complete";
+
         return (
           <div key={stop.merchantId} className="flex gap-3">
-            {/* Timeline line */}
             <div className="flex flex-col items-center">
               <div
                 className={cn(
-                  "h-7 w-7 rounded-md border flex items-center justify-center text-xs font-medium shrink-0",
-                  isActive && "bg-foreground text-background border-foreground",
-                  isDone && "bg-secondary text-muted-foreground border-border",
-                  !isActive && !isDone && "bg-background text-muted-foreground border-border"
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl border text-xs font-semibold",
+                  isActive && "border-primary/30 bg-primary text-primary-foreground",
+                  isDone && "border-emerald-200 bg-emerald-50 text-emerald-700",
+                  !isActive && !isDone && "border-border bg-background text-muted-foreground",
                 )}
               >
-                {i + 1}
+                {index + 1}
               </div>
-              {i < plan.stops.length - 1 && (
-                <div className="w-px h-8 bg-border" />
-              )}
+              {index < stops.length - 1 && <div className="h-10 w-px bg-border" />}
             </div>
-            {/* Content */}
-            <div className="pb-6 pt-0.5 min-w-0">
+            <div className="min-w-0 pb-7 pt-0.5">
               <div className="flex items-center gap-2">
-                <MerchantIcon type={stop.merchantType} className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-sm font-medium truncate">{stop.merchantName}</span>
+                <MerchantIcon type={stop.merchantKind} className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="truncate text-sm font-medium">{stop.merchantName}</span>
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                ETA: {new Date(stop.etaArrivalAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                {" Â· "}
-                Ready: {new Date(stop.etaReadyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Arrive {formatTime(stop.etaArrivalAt)}
+                {" • "}
+                Ready {formatTime(stop.etaReadyAt)}
+              </p>
+              <p className="mt-1 text-xs font-medium text-muted-foreground/80">
+                {stop.state === "active" && "Current pickup focus"}
+                {stop.state === "complete" && "Already cleared"}
+                {stop.state === "pending" && "Waiting in queue"}
               </p>
             </div>
           </div>

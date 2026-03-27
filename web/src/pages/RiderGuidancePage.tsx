@@ -1,114 +1,217 @@
-import { useOrderStore } from "@/store/order-store";
-import { OrderStatusBadge } from "@/components/OrderStatusBadge";
+import { useEffect } from "react";
+import { ArrowRight, Navigation, RadioTower, RefreshCcw, Route, UserRound } from "lucide-react";
+import { Link } from "react-router-dom";
+
+import { EmptyState } from "@/components/EmptyState";
 import { MapView } from "@/components/MapView";
 import { RouteTimeline } from "@/components/RouteTimeline";
-import { MerchantIcon } from "@/components/MerchantIcon";
-import { Navigation, ChevronDown } from "lucide-react";
-import { useState } from "react";
+import { SurfaceCard } from "@/components/SurfaceCard";
+import { Button } from "@/components/ui/button";
+import { usePersistentState } from "@/hooks/use-persistent-state";
+import { useUserRoutes } from "@/hooks/use-user-routes";
+import { formatTime } from "@/lib/format";
+import { buildDisplayRouteStops, resolveMerchantName } from "@/lib/order-presenters";
+import { cn } from "@/lib/utils";
+
+const inputClassName =
+  "h-11 rounded-2xl border border-border/80 bg-background/70 px-4 text-sm outline-none transition focus:border-primary/30 focus:ring-4 focus:ring-primary/10";
 
 export default function RiderGuidancePage() {
-  const orders = useOrderStore((s) => s.orders);
-  const activeOrders = orders.filter((o) => o.status === "dispatching" && o.dispatchInstruction);
-  const [selectedId, setSelectedId] = useState(activeOrders[0]?.id ?? "");
-  const order = orders.find((o) => o.id === selectedId);
+  const [userId, setUserId] = usePersistentState("delivery.userId", "user_demo");
+  const [selectedOrderId, setSelectedOrderId] = usePersistentState("delivery.guidanceOrderId", "");
+  const routesQuery = useUserRoutes(userId);
 
-  if (activeOrders.length === 0) {
-    return (
-      <div>
-        <h1 className="text-lg font-semibold mb-1">Rider Guidance</h1>
-        <p className="text-sm text-muted-foreground mb-6">Active dispatch instructions for delivery partner</p>
-        <div className="py-12 text-center text-sm text-muted-foreground border rounded-md">
-          No active dispatches. Create an order and wait for it to reach "dispatching" status.
-        </div>
-      </div>
-    );
-  }
+  const activeOrders = (routesQuery.data?.orders ?? []).filter((order) => order.dispatchInstruction && order.routePlan);
 
-  const di = order?.dispatchInstruction;
-  const rp = order?.routePlan;
+  useEffect(() => {
+    if (!activeOrders.length) {
+      return;
+    }
+
+    if (!activeOrders.some((order) => order.orderId === selectedOrderId)) {
+      setSelectedOrderId(activeOrders[0].orderId);
+    }
+  }, [activeOrders, selectedOrderId, setSelectedOrderId]);
+
+  const selectedOrder = activeOrders.find((order) => order.orderId === selectedOrderId) ?? activeOrders[0];
+  const displayStops = buildDisplayRouteStops(
+    selectedOrder?.routePlan,
+    selectedOrder?.dispatchInstruction,
+    selectedOrder?.status,
+  );
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-lg font-semibold">Rider Guidance</h1>
-          <p className="text-sm text-muted-foreground">Active dispatch instructions</p>
-        </div>
-        {activeOrders.length > 1 && (
-          <div className="relative">
-            <select
-              value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
-              className="appearance-none text-sm bg-secondary rounded-md px-3 py-1.5 pr-7 border-0 cursor-pointer"
-            >
-              {activeOrders.map((o) => (
-                <option key={o.id} value={o.id}>{o.id}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-          </div>
-        )}
-      </div>
-
-      {order && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-6">
-            {/* Next stop card */}
-            {di?.nextStop && (
-              <div className="border rounded-md p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Navigation className="h-4 w-4" />
-                  <span className="text-sm font-medium">Next Stop</span>
-                </div>
-                <div className="flex items-center gap-3 mb-3">
-                  <MerchantIcon type={di.nextStop.merchantType} className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">{di.nextStop.merchantName}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{di.nextStop.merchantType}</p>
-                  </div>
-                </div>
-                <div className="bg-muted rounded-md p-3">
-                  <p className="text-sm">{di.pickupNotes}</p>
-                </div>
-                <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-                  <span className="bg-foreground text-background px-2 py-0.5 rounded font-medium">
-                    {di.etaToNextStopMinutes} min away
-                  </span>
-                  <span>
-                    Ready at: {new Date(di.nextStop.etaReadyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Full route */}
-            {rp && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-medium">Full Route</h2>
-                  <span className="text-xs text-muted-foreground">
-                    {rp.stops.length} stops · Done by {new Date(rp.estimatedCompletionAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-                <RouteTimeline plan={rp} />
-              </div>
-            )}
-
-            {/* Delivery destination */}
-            <div className="border rounded-md p-3">
-              <p className="text-xs text-muted-foreground mb-1">Deliver to</p>
-              <p className="text-sm">{order.deliveryLocation.address}</p>
+    <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[1.55fr_1fr]">
+        <SurfaceCard>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Rider guidance</p>
+          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-3xl font-semibold tracking-tight">Dispatch payload the rider actually needs</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                This screen is driven off the user route summary feed and highlights
+                <code> dispatchInstruction.nextStop</code>, pickup notes, ETA to next stop, full ordered stops, and the
+                final destination on the map.
+              </p>
+            </div>
+            <div className="rounded-[1.25rem] border border-primary/15 bg-primary/10 px-4 py-3 text-sm text-primary">
+              <span className="font-semibold">Active dispatches:</span> {activeOrders.length}
             </div>
           </div>
+        </SurfaceCard>
 
-          {/* Map */}
-          <div>
-            <MapView
-              stops={rp?.stops}
-              deliveryLocation={order.deliveryLocation}
-              activeStopId={di?.nextStop?.merchantId}
-              className="h-[500px] w-full rounded-md border overflow-hidden"
-            />
+        <SurfaceCard>
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+              <UserRound className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Feed filter</p>
+              <h3 className="text-lg font-semibold tracking-tight">User id</h3>
+            </div>
+          </div>
+          <input
+            value={userId}
+            onChange={(event) => setUserId(event.target.value)}
+            className={cn(inputClassName, "mt-5 w-full")}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-4 w-full rounded-2xl"
+            onClick={() => void routesQuery.refetch()}
+            disabled={routesQuery.isFetching}
+          >
+            <RefreshCcw className={cn("h-4 w-4", routesQuery.isFetching && "animate-spin")} />
+            Refresh guidance
+          </Button>
+        </SurfaceCard>
+      </div>
+
+      {routesQuery.isLoading && activeOrders.length === 0 ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {[0, 1].map((index) => (
+            <SurfaceCard key={index} className="animate-pulse">
+              <div className="h-4 w-24 rounded bg-muted" />
+              <div className="mt-4 h-8 w-2/3 rounded bg-muted" />
+              <div className="mt-6 h-48 rounded-[1.5rem] bg-muted/80" />
+            </SurfaceCard>
+          ))}
+        </div>
+      ) : routesQuery.isError ? (
+        <SurfaceCard>
+          <p className="text-sm font-medium text-destructive">Unable to load rider guidance.</p>
+          <p className="mt-2 text-sm text-muted-foreground">{routesQuery.error.message}</p>
+        </SurfaceCard>
+      ) : !selectedOrder ? (
+        <EmptyState
+          icon={RadioTower}
+          title="No active dispatch instructions"
+          description="Create an order and wait for it to reach `dispatching`. Once the backend publishes rider guidance it will show up here."
+        />
+      ) : (
+        <div className="space-y-6">
+          <div className="flex flex-wrap gap-2">
+            {activeOrders.map((order) => (
+              <button
+                key={order.orderId}
+                type="button"
+                onClick={() => setSelectedOrderId(order.orderId)}
+                className={cn(
+                  "rounded-full border px-4 py-2 text-sm font-medium transition-colors",
+                  order.orderId === selectedOrder.orderId
+                    ? "border-primary/25 bg-primary/10 text-primary"
+                    : "border-border bg-background/70 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {order.orderId}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="space-y-6">
+              <SurfaceCard>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+                    <Navigation className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Next stop</p>
+                    <h3 className="text-lg font-semibold tracking-tight">
+                      {selectedOrder.dispatchInstruction?.nextStop
+                        ? resolveMerchantName(selectedOrder.dispatchInstruction.nextStop.merchantId)
+                        : "No stop assigned"}
+                    </h3>
+                  </div>
+                </div>
+                <div className="mt-5 rounded-[1.25rem] border border-border/60 bg-background/70 p-4">
+                  <p className="text-sm font-medium text-foreground">{selectedOrder.dispatchInstruction?.pickupNotes}</p>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span className="rounded-full bg-muted px-2.5 py-1">
+                      ETA {selectedOrder.dispatchInstruction?.etaToNextStopMinutes} min
+                    </span>
+                    <span className="rounded-full bg-muted px-2.5 py-1">
+                      Route v{selectedOrder.dispatchInstruction?.routeVersion}
+                    </span>
+                    <span className="rounded-full bg-muted px-2.5 py-1">
+                      Issued {formatTime(selectedOrder.dispatchInstruction?.issuedAt)}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-[1.15rem] border border-border/60 bg-background/65 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Order</p>
+                    <p className="mt-2 text-sm font-semibold text-foreground">{selectedOrder.orderId}</p>
+                  </div>
+                  <div className="rounded-[1.15rem] border border-border/60 bg-background/65 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Destination</p>
+                    <p className="mt-2 text-sm font-semibold text-foreground">{selectedOrder.deliveryLocation.address}</p>
+                  </div>
+                  <div className="rounded-[1.15rem] border border-border/60 bg-background/65 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Stops</p>
+                    <p className="mt-2 text-sm font-semibold text-foreground">{displayStops.length}</p>
+                  </div>
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+                    <Route className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Ordered route</p>
+                    <h3 className="text-lg font-semibold tracking-tight">Pickup sequence</h3>
+                  </div>
+                </div>
+                <div className="mt-5">
+                  <RouteTimeline stops={displayStops} />
+                </div>
+              </SurfaceCard>
+            </div>
+
+            <div className="space-y-6">
+              <SurfaceCard>
+                <MapView stops={displayStops} deliveryLocation={selectedOrder.deliveryLocation} className="h-[460px]" />
+              </SurfaceCard>
+
+              <SurfaceCard>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Jump deeper</p>
+                    <h3 className="text-lg font-semibold tracking-tight">Open full tracking view</h3>
+                  </div>
+                  <Link
+                    to={`/orders/${selectedOrder.orderId}`}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                  >
+                    Order detail
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </SurfaceCard>
+            </div>
           </div>
         </div>
       )}

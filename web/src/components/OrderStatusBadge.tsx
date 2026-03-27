@@ -1,22 +1,28 @@
 import type { OrderStatus } from "@/types/contracts";
-import { Badge } from "@/components/ui/badge";
+
+import { titleCase } from "@/lib/format";
+import { statusTone } from "@/lib/order-presenters";
 import { cn } from "@/lib/utils";
 
-const statusConfig: Record<OrderStatus, { label: string; className: string }> = {
-  created: { label: "Created", className: "bg-secondary text-secondary-foreground" },
-  orchestrating: { label: "Orchestrating", className: "bg-secondary text-secondary-foreground animate-pulse" },
-  awaiting_ops: { label: "Awaiting Ops", className: "bg-warning/10 text-warning-foreground border-warning/30" },
-  route_ready: { label: "Route Ready", className: "bg-secondary text-foreground" },
-  dispatching: { label: "Dispatching", className: "bg-foreground text-background" },
-  completed: { label: "Completed", className: "bg-success/10 text-success border-success/30" },
-  canceled: { label: "Canceled", className: "bg-destructive/10 text-destructive border-destructive/30" },
+const toneClasses: Record<ReturnType<typeof statusTone>, string> = {
+  neutral: "border-slate-200 bg-slate-100 text-slate-700",
+  accent: "border-primary/20 bg-primary/10 text-primary",
+  warning: "border-amber-200 bg-amber-50 text-amber-700",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  danger: "border-destructive/20 bg-destructive/10 text-destructive",
 };
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {
-  const config = statusConfig[status];
+  const tone = statusTone(status);
+
   return (
-    <Badge variant="outline" className={cn("font-medium text-xs border", config.className)}>
-      {config.label}
-    </Badge>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]",
+        toneClasses[tone],
+      )}
+    >
+      {titleCase(status)}
+    </span>
   );
 }

@@ -1,3 +1,5 @@
+export type ItemCategory = "grocery" | "food" | "electronics" | "other";
+
 export type OrderStatus =
   | "created"
   | "orchestrating"
@@ -6,6 +8,15 @@ export type OrderStatus =
   | "dispatching"
   | "completed"
   | "canceled";
+
+export type MerchantTaskStatus =
+  | "pending"
+  | "checking_vendor"
+  | "confirmed"
+  | "failed"
+  | "canceled";
+
+export type OpsTicketStatus = "open" | "in_progress" | "resolved";
 
 export interface GeoPoint {
   lat: number;
@@ -16,25 +27,75 @@ export interface DeliveryLocation extends GeoPoint {
   address: string;
 }
 
-export interface MerchantItem {
+export interface CreateOrderItemInput {
+  itemId: string;
+  name: string;
+  category: ItemCategory;
   merchantId: string;
-  merchantName: string;
-  merchantType: "grocery" | "restaurant" | "electronics" | "pharmacy";
-  itemName: string;
   quantity: number;
-  price: number;
-  location: GeoPoint;
-  estimatedPrepTime: number; // minutes
+  merchantLocation?: GeoPoint;
+}
+
+export interface CreateOrderRequest {
+  userId: string;
+  deliveryLocation: DeliveryLocation;
+  items: CreateOrderItemInput[];
+}
+
+export interface CreateOrderResponse {
+  orderId: string;
+  status: OrderStatus;
+  merchantTaskCount: number;
+  createdAt: string;
+}
+
+export interface Order {
+  id: string;
+  userId: string;
+  status: OrderStatus;
+  deliveryLocation: DeliveryLocation;
+  createdAt: string;
+  updatedAt: string;
+  canceledAt?: string;
+}
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  itemId: string;
+  name: string;
+  category: ItemCategory;
+  merchantId: string;
+  quantity: number;
+  status: "created" | "unavailable" | "picked" | "canceled";
+}
+
+export interface MerchantTask {
+  id: string;
+  orderId: string;
+  merchantId: string;
+  merchantLocation: GeoPoint;
+  taskStatus: MerchantTaskStatus;
+  attemptCount: number;
+  deadlineAt: string;
+}
+
+export interface VendorReport {
+  orderId: string;
+  merchantId: string;
+  availability: "available" | "partial" | "unavailable";
+  etaReadyAt: string;
+  confidence: number;
+  source: "ai_call" | "ai_chat" | "api" | "ops";
+  reportedAt: string;
+  notes?: string;
 }
 
 export interface RouteStop {
   merchantId: string;
-  merchantName: string;
-  merchantType: MerchantItem["merchantType"];
   location: GeoPoint;
   etaArrivalAt: string;
   etaReadyAt: string;
-  status: "pending" | "arrived" | "picked_up";
 }
 
 export interface RoutePlan {
@@ -55,14 +116,42 @@ export interface DispatchInstruction {
   issuedAt: string;
 }
 
-export interface Order {
+export interface OpsTicket {
   id: string;
-  userId: string;
-  status: OrderStatus;
-  items: MerchantItem[];
-  deliveryLocation: DeliveryLocation;
+  orderId: string;
+  merchantId: string;
+  reason: string;
+  priority: "high" | "medium" | "low";
+  status: OpsTicketStatus;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface OrderSnapshot {
+  order: Order;
+  items: OrderItem[];
+  merchantTasks: MerchantTask[];
+  vendorReports: VendorReport[];
   routePlan?: RoutePlan;
   dispatchInstruction?: DispatchInstruction;
-  createdAt: string;
-  updatedAt: string;
+  opsTickets: OpsTicket[];
+}
+
+export interface UserOrderRouteSummary {
+  orderId: string;
+  status: OrderStatus;
+  deliveryLocation: DeliveryLocation;
+  merchantLocations: Array<{
+    merchantId: string;
+    taskStatus: MerchantTaskStatus;
+    location: GeoPoint;
+  }>;
+  routePlan?: RoutePlan;
+  dispatchInstruction?: DispatchInstruction;
+}
+
+export interface UserRoutesResponse {
+  userId: string;
+  count: number;
+  orders: UserOrderRouteSummary[];
 }
