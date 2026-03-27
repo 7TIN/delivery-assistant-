@@ -34,57 +34,26 @@ Important values:
 - `OSRM_CACHE_TTL_MS=300000`
 - `OSRM_MAX_CONCURRENT_REQUESTS=4`
 - `OSRM_LOG_FAILED_ROUTE_URL=true`
+- `OSRM_LOG_SUCCESS_ROUTE_URL=true`
 - `REDIS_URL=redis://localhost:6379` (required for BullMQ mode)
 - `VENDOR_MIN_CONFIDENCE=0.65`
 
-## Prisma commands
-
-- Generate client:
-
-```bash
-bun run prisma:generate
-```
-
-- Run migration:
-
-```bash
-bun run prisma:migrate
-```
-
-## Run (in-memory repository mode)
+## Run
 
 ```bash
 bun install
 bun run dev
 ```
 
-## Run (Prisma/Postgres repository mode)
-
-1. Start PostgreSQL.
-2. Set `REPOSITORY_DRIVER=prisma` and `DATABASE_URL`.
-3. Run Prisma generate + migrate.
-4. Start API:
-
-```bash
-bun run dev
-```
-
-## Run (BullMQ queue mode)
-
-1. Start Redis.
-2. Set `QUEUE_DRIVER=bullmq`.
-3. Start API:
-
-```bash
-bun run dev
-```
-
 ## Startup logs
 
-- Queue driver (`bullmq` or `in-memory`).
-- Repository driver (`prisma` or `memory`).
-- Redis connection status (connected/ping/reconnect/error/closed).
-- OSRM API availability (reachable or fallback warning).
+- Queue driver (`bullmq` or `in-memory`)
+- Repository driver (`prisma` or `memory`)
+- Redis connection status (connected/ping/reconnect/error/closed)
+- OSRM API availability
+- OSRM route request logs (success/failure URL, coords, timeout, minutes/reason)
+- Route planner logs (final stop sequence + rider map URL)
+- Dispatch logs (final rider guidance payload)
 
 ## Endpoints
 
@@ -98,13 +67,11 @@ bun run dev
 ## Notes on OSRM timeouts
 
 If you run many concurrent orders against the public endpoint (`router.project-osrm.org`), you can hit timeouts/rate limits.
-This project now throttles and caches OSRM estimates, logs failed route URLs for debugging, and automatically falls back to local estimation during cooldown.
-For heavy load tests, prefer running your own OSRM server and set `OSRM_BASE_URL` to that instance.
+This project throttles and caches OSRM estimates, logs route URLs, and falls back to local estimation during cooldown.
+For heavy load tests, prefer your own OSRM server and set `OSRM_BASE_URL` to that instance.
 
 ## Smoke test
 
 ```bash
 bun run smoke:test
 ```
-
-This starts the API in background, runs full flow checks, and prints JSON results.

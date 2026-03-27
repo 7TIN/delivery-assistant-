@@ -10,6 +10,7 @@ const DEFAULT_COOLDOWN_MS = 60000;
 const DEFAULT_CACHE_TTL_MS = 300000;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 4;
 const DEFAULT_LOG_FAILED_ROUTE_URL = true;
+const DEFAULT_LOG_SUCCESS_ROUTE_URL = true;
 const COOLDOWN_LOG_INTERVAL_MS = 15000;
 
 export interface TravelEstimator {
@@ -95,6 +96,13 @@ export class OsrmTravelEstimator implements TravelEstimator {
       this.consecutiveFailures = 0;
       this.cooldownUntil = 0;
       this.setCachedEstimate(cacheKey, minutes, this.cacheTtlMs);
+
+      if (shouldLogSuccessRouteUrl()) {
+        console.info(
+          `[osrm] route request success url=${url} from=${from.lat},${from.lng} to=${to.lat},${to.lng} timeoutMs=${formatTimeoutMs(this.timeoutMs)} minutes=${minutes}`,
+        );
+      }
+
       return minutes;
     } catch (error) {
       const reason = normalizeError(error);
@@ -387,6 +395,10 @@ function isOsrmTimeoutDisabled(): boolean {
 
 function shouldLogFailedRouteUrl(): boolean {
   return parseBoolean(Bun.env.OSRM_LOG_FAILED_ROUTE_URL, DEFAULT_LOG_FAILED_ROUTE_URL);
+}
+
+function shouldLogSuccessRouteUrl(): boolean {
+  return parseBoolean(Bun.env.OSRM_LOG_SUCCESS_ROUTE_URL, DEFAULT_LOG_SUCCESS_ROUTE_URL);
 }
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {

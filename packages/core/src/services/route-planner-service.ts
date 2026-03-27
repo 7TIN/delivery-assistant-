@@ -1,4 +1,4 @@
-import type { MerchantTask, RoutePlan, RouteStop, VendorReport } from "../../../contracts/src";
+import type { DeliveryLocation, MerchantTask, RoutePlan, RouteStop, VendorReport } from "../../../contracts/src";
 import type { QueueBroker } from "../../../queue/src";
 import type { TravelEstimator } from "../routing/travel-estimator";
 import type { OrderStore } from "../store";
@@ -26,6 +26,7 @@ export class RoutePlannerService {
 
       const candidateStops = buildCandidateStops(snapshot.merchantTasks, snapshot.vendorReports);
       if (candidateStops.length === 0) {
+        console.warn(`[route-planner] orderId=${orderId} no candidate stops available`);
         return;
       }
 
@@ -38,6 +39,15 @@ export class RoutePlannerService {
       });
 
       await this.store.saveRoutePlan(plan);
+
+      const riderMapUrl = buildGoogleMapsDirectionsUrl(snapshot.order.deliveryLocation, plan.stops);
+      console.info(
+        `[route-planner] orderId=${orderId} version=${plan.version} stops=${plan.stops.length} objectiveScore=${plan.objectiveScore} completionAt=${plan.estimatedCompletionAt}`,
+      );
+      console.info(`[route-planner] orderId=${orderId} plannedStops=${JSON.stringify(plan.stops)}`);
+      if (riderMapUrl) {
+        console.info(`[route-planner] orderId=${orderId} riderMapUrl=${riderMapUrl}`);
+      }
 
       await this.queue.publish("route.plan.updated", {
         orderId,
@@ -155,4 +165,29 @@ async function buildRoutePlan(input: {
     objectiveScore,
     generatedAt: isoNow(),
   };
+}
+
+function buildGoogleMapsDirectionsUrl(
+  deliveryLocation: DeliveryLocation,
+  stops: RouteStop[],
+): string | undefined {
+  if (stops.length === 0) {
+    return undefined;
+  }
+
+  const origin = `${deliveryLocation.lat},${deliveryLocation.lng}`;
+  const destination = origin;
+  const waypoints = stops.map((stop) => `${stop.location.lat},${stop.location.lng}`).join("|");
+
+  const params = new URLSearchParams({
+    api: "1",
+    origin,
+    destination,
+  });
+
+  if (waypoints.length > 0) {
+    params.set("waypoints", waypoints);
+  }
+
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
