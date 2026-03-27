@@ -33,7 +33,7 @@ export function RouteTimeline({ stops }: { stops: DisplayRouteStop[] }) {
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Arrive {formatTime(stop.etaArrivalAt)}
-                {" • "}
+                {" * "}
                 Ready {formatTime(stop.etaReadyAt)}
               </p>
               <p className="mt-1 text-xs font-medium text-muted-foreground/80">
