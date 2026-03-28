@@ -66,3 +66,10 @@ export async function updateDriverLocation(
     body: JSON.stringify(location),
   });
 }
+
+export async function getAllUsersRoutes(userIds: string[]): Promise<UserRoutesResponse[]> {
+  const results = await Promise.all(
+    userIds.map(userId => getUserRoutes(userId))
+  );
+  return results;
+}

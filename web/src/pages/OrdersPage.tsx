@@ -1,22 +1,18 @@
-import { Activity, ArrowRight, Plus, RefreshCcw, Route, UserRound } from "lucide-react";
+import { Activity, ArrowRight, Plus, Route } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { EmptyState } from "@/components/EmptyState";
 import { OrderStatusBadge } from "@/components/OrderStatusBadge";
 import { SurfaceCard } from "@/components/SurfaceCard";
+import { UserControl } from "@/components/UserControl";
 import { buttonVariants } from "@/components/ui/button-variants";
-import { Button } from "@/components/ui/button";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { useUserRoutes } from "@/hooks/use-user-routes";
 import { titleCase } from "@/lib/format";
 import { buildDashboardMetrics, resolveMerchantName } from "@/lib/order-presenters";
-import { cn } from "@/lib/utils";
-
-const inputClassName =
-  "h-11 rounded-2xl border border-border/80 bg-background/70 px-4 text-sm outline-none transition focus:border-primary/30 focus:ring-4 focus:ring-primary/10";
 
 export default function OrdersPage() {
-  const [userId, setUserId] = usePersistentState("delivery.userId", "user_demo");
+  const [userId] = usePersistentState<string>("delivery.userId", "user_demo");
   const routesQuery = useUserRoutes(userId);
 
   const orders = routesQuery.data?.orders ?? [];
@@ -70,38 +66,10 @@ export default function OrdersPage() {
         </SurfaceCard>
 
         <SurfaceCard>
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
-              <UserRound className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">User scope</p>
-              <h3 className="text-lg font-semibold tracking-tight">Route summary feed</h3>
-            </div>
-          </div>
-          <label className="mt-5 block text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-            User id
-          </label>
-          <input
-            value={userId}
-            onChange={(event) => setUserId(event.target.value)}
-            className={cn(inputClassName, "mt-2 w-full")}
-            placeholder="user_demo"
+          <UserControl
+            onRefresh={() => void routesQuery.refetch()}
+            isRefreshing={routesQuery.isFetching}
           />
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            The backend only exposes order-route summaries by user, so this value drives the control dashboard,
-            routes page, and rider guidance panel.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-5 w-full rounded-2xl"
-            onClick={() => void routesQuery.refetch()}
-            disabled={routesQuery.isFetching}
-          >
-            <RefreshCcw className={cn("h-4 w-4", routesQuery.isFetching && "animate-spin")} />
-            Refresh summaries
-          </Button>
           <div className="mt-5 rounded-[1.25rem] border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">What is still mocked?</p>
             <p className="mt-2 leading-6">

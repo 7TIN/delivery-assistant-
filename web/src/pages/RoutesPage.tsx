@@ -1,21 +1,17 @@
-import { ArrowRight, Navigation, RefreshCcw, Route, UserRound } from "lucide-react";
+import { ArrowRight, Navigation, RefreshCcw, Route } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { EmptyState } from "@/components/EmptyState";
 import { OrderStatusBadge } from "@/components/OrderStatusBadge";
 import { RouteTimeline } from "@/components/RouteTimeline";
 import { SurfaceCard } from "@/components/SurfaceCard";
-import { Button } from "@/components/ui/button";
+import { UserControl } from "@/components/UserControl";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { useUserRoutes } from "@/hooks/use-user-routes";
 import { buildDashboardMetrics, buildDisplayRouteStops, resolveMerchantName } from "@/lib/order-presenters";
-import { cn } from "@/lib/utils";
-
-const inputClassName =
-  "h-11 rounded-2xl border border-border/80 bg-background/70 px-4 text-sm outline-none transition focus:border-primary/30 focus:ring-4 focus:ring-primary/10";
 
 export default function RoutesPage() {
-  const [userId, setUserId] = usePersistentState("delivery.userId", "user_demo");
+  const [userId] = usePersistentState<string>("delivery.userId", "user_demo");
   const routesQuery = useUserRoutes(userId);
 
   const orders = routesQuery.data?.orders ?? [];
@@ -55,30 +51,10 @@ export default function RoutesPage() {
         </SurfaceCard>
 
         <SurfaceCard>
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
-              <UserRound className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Feed filter</p>
-              <h3 className="text-lg font-semibold tracking-tight">User id</h3>
-            </div>
-          </div>
-          <input
-            value={userId}
-            onChange={(event) => setUserId(event.target.value)}
-            className={cn(inputClassName, "mt-5 w-full")}
+          <UserControl
+            onRefresh={() => void routesQuery.refetch()}
+            isRefreshing={routesQuery.isFetching}
           />
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-4 w-full rounded-2xl"
-            onClick={() => void routesQuery.refetch()}
-            disabled={routesQuery.isFetching}
-          >
-            <RefreshCcw className={cn("h-4 w-4", routesQuery.isFetching && "animate-spin")} />
-            Refresh routes
-          </Button>
         </SurfaceCard>
       </div>
 
