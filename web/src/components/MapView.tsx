@@ -4,7 +4,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import type { DisplayRouteStop } from "@/lib/order-presenters";
-import type { DeliveryLocation } from "@/types/contracts";
+import type { DeliveryLocation, DriverLocation, GeoPoint } from "@/types/contracts";
 
 function createStopIcon(num: number, state: DisplayRouteStop["state"]) {
   const palette =
@@ -43,28 +43,52 @@ const destinationIcon = L.divIcon({
   iconAnchor: [18, 18],
 });
 
+const driverIcon = L.divIcon({
+  className: "",
+  html: `<div style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#22c55e;border:3px solid #ffffff;box-shadow:0 2px 8px rgba(0,0,0,0.3);animation:pulse 2s infinite"><svg width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none"><circle cx="12" cy="8" r="4"/><path d="M12 14c-4 0-7 2-7 4v2h14v-2c0-2-3-4-7-4z"/></svg></div><style>@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.1);opacity:0.8}}</style>`,
+  iconSize: [40, 40],
+  iconAnchor: [20, 20],
+});
+
 interface MapViewProps {
   stops?: DisplayRouteStop[];
   deliveryLocation?: DeliveryLocation;
+  driverLocation?: DriverLocation | GeoPoint;
   className?: string;
 }
 
 const DEFAULT_CENTER: [number, number] = [37.7749, -122.4194];
 
-export function MapView({ stops, deliveryLocation, className }: MapViewProps) {
+function extractGeoPoint(loc: DriverLocation | GeoPoint): GeoPoint {
+  return "location" in loc ? loc.location : loc;
+}
+
+export function MapView({ stops, deliveryLocation, driverLocation, className }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
+
+  const driverPosition = useMemo<[number, number] | null>(
+    () =>
+      driverLocation
+        ? [extractGeoPoint(driverLocation).lat, extractGeoPoint(driverLocation).lng]
+        : null,
+    [driverLocation],
+  );
+
   const center = useMemo<[number, number]>(
     () =>
-      deliveryLocation
-        ? [deliveryLocation.lat, deliveryLocation.lng]
-        : DEFAULT_CENTER,
-    [deliveryLocation],
+      driverPosition
+        ? driverPosition
+        : deliveryLocation
+          ? [deliveryLocation.lat, deliveryLocation.lng]
+          : DEFAULT_CENTER,
+    [deliveryLocation, driverPosition],
   );
 
   const positions = useMemo<[number, number][]>(
     () => [
+      ...(driverPosition ? [driverPosition] : []),
       ...(stops?.map(
         (stop) => [stop.location.lat, stop.location.lng] as [number, number],
       ) ?? []),
@@ -72,7 +96,7 @@ export function MapView({ stops, deliveryLocation, className }: MapViewProps) {
         ? [[deliveryLocation.lat, deliveryLocation.lng] as [number, number]]
         : []),
     ],
-    [deliveryLocation, stops],
+    [deliveryLocation, stops, driverPosition],
   );
 
   useEffect(() => {
@@ -132,6 +156,16 @@ export function MapView({ stops, deliveryLocation, className }: MapViewProps) {
         .addTo(layers);
     }
 
+    if (driverPosition) {
+      L.marker([driverPosition[0], driverPosition[1]], {
+        icon: driverIcon,
+      })
+        .bindPopup(
+          `<div style="font-family:Inter,sans-serif;font-size:13px;"><strong>Driver location</strong><br/><span style="color:#64748b;">Current position</span></div>`,
+        )
+        .addTo(layers);
+    }
+
     // if (positions.length > 1) {
     //   L.polyline(positions, {
     //     color: "#0f766e",
@@ -143,6 +177,7 @@ export function MapView({ stops, deliveryLocation, className }: MapViewProps) {
     //   map.fitBounds(L.latLngBounds(positions), { padding: [40, 40], maxZoom: 15 });
     if (positions.length > 1) {
       fetchRoadRoute([
+        ...(driverPosition ? [{ lat: driverPosition[0], lng: driverPosition[1] }] : []),
         ...(stops?.map((s) => ({ lat: s.location.lat, lng: s.location.lng })) ??
           []),
         ...(deliveryLocation
@@ -181,7 +216,7 @@ export function MapView({ stops, deliveryLocation, className }: MapViewProps) {
     } else {
       map.setView(center, 14);
     }
-  }, [center, deliveryLocation, positions, stops]);
+  }, [center, deliveryLocation, driverPosition, positions, stops]);
 
   const containerClass =
     className ??

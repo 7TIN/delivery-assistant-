@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { ArrowRight, Navigation, RadioTower, RefreshCcw, Route, UserRound } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowRight, MapPin, Navigation, RadioTower, RefreshCcw, Route, UserRound } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -8,6 +8,7 @@ import { RouteTimeline } from "@/components/RouteTimeline";
 import { SurfaceCard } from "@/components/SurfaceCard";
 import { Button } from "@/components/ui/button";
 import { usePersistentState } from "@/hooks/use-persistent-state";
+import { useUpdateDriverLocation } from "@/hooks/use-update-driver-location";
 import { useUserRoutes } from "@/hooks/use-user-routes";
 import { formatTime } from "@/lib/format";
 import { buildDisplayRouteStops, resolveMerchantName } from "@/lib/order-presenters";
@@ -193,8 +194,15 @@ export default function RiderGuidancePage() {
 
             <div className="space-y-6">
               <SurfaceCard>
-                <MapView stops={displayStops} deliveryLocation={selectedOrder.deliveryLocation} className="h-[460px]" />
+                <MapView
+                  stops={displayStops}
+                  deliveryLocation={selectedOrder.deliveryLocation}
+                  driverLocation={selectedOrder.driverLocation}
+                  className="h-[460px]"
+                />
               </SurfaceCard>
+
+              <DriverLocationControl orderId={selectedOrder.orderId} />
 
               <SurfaceCard>
                 <div className="flex items-center justify-between gap-3">
@@ -216,5 +224,90 @@ export default function RiderGuidancePage() {
         </div>
       )}
     </div>
+  );
+}
+
+const DEMO_DRIVER_LOCATION = {
+  lat: 37.782319,
+  lng: -122.404046,
+};
+
+function DriverLocationControl({ orderId }: { orderId: string }) {
+  const updateMutation = useUpdateDriverLocation(orderId);
+  const [lat, setLat] = useState(DEMO_DRIVER_LOCATION.lat.toString());
+  const [lng, setLng] = useState(DEMO_DRIVER_LOCATION.lng.toString());
+
+  const handleSetDemo = () => {
+    setLat(DEMO_DRIVER_LOCATION.lat.toString());
+    setLng(DEMO_DRIVER_LOCATION.lng.toString());
+  };
+
+  const handleUpdate = () => {
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
+    if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) {
+      return;
+    }
+    updateMutation.mutate({ lat: parsedLat, lng: parsedLng });
+  };
+
+  return (
+    <SurfaceCard>
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-green-500/15 bg-green-500/10 text-green-600">
+          <MapPin className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-green-600">Driver location</p>
+          <h3 className="text-lg font-semibold tracking-tight">Set driver position</h3>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+        <div>
+          <label className="mb-1.5 block text-xs text-muted-foreground">Latitude</label>
+          <input
+            type="text"
+            value={lat}
+            onChange={(e) => setLat(e.target.value)}
+            className={cn(inputClassName, "w-full")}
+            placeholder="37.782319"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs text-muted-foreground">Longitude</label>
+          <input
+            type="text"
+            value={lng}
+            onChange={(e) => setLng(e.target.value)}
+            className={cn(inputClassName, "w-full")}
+            placeholder="-122.404046"
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Button
+            type="button"
+            className="flex-1 rounded-2xl bg-green-600 hover:bg-green-700"
+            onClick={handleUpdate}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending ? "Updating..." : "Update"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1 rounded-2xl"
+            onClick={handleSetDemo}
+          >
+            Demo
+          </Button>
+        </div>
+      </div>
+      {updateMutation.isSuccess && (
+        <p className="mt-3 text-sm text-green-600">Driver location updated!</p>
+      )}
+      {updateMutation.isError && (
+        <p className="mt-3 text-sm text-destructive">Failed to update driver location</p>
+      )}
+    </SurfaceCard>
   );
 }

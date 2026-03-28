@@ -1,6 +1,8 @@
 import type {
   CreateOrderRequest,
   CreateOrderResponse,
+  DriverLocation,
+  GeoPoint,
   OrderSnapshot,
   RoutePlan,
   UserOrderRouteSummary,
@@ -58,6 +60,7 @@ export class OrderApiService {
         })),
         routePlan: snapshot.routePlan,
         dispatchInstruction: snapshot.dispatchInstruction,
+        driverLocation: snapshot.driverLocation,
       }));
   }
 
@@ -75,6 +78,20 @@ export class OrderApiService {
 
   async getRoute(orderId: string): Promise<RoutePlan | undefined> {
     return this.store.getRoutePlan(orderId);
+  }
+
+  async getDriverLocation(orderId: string): Promise<DriverLocation | undefined> {
+    return this.store.getDriverLocation(orderId);
+  }
+
+  async updateDriverLocation(orderId: string, location: GeoPoint): Promise<DriverLocation> {
+    validateGeoPoint(location);
+    await this.store.upsertDriverLocation(orderId, location);
+    const updated = await this.store.getDriverLocation(orderId);
+    if (!updated) {
+      throw new Error("Failed to update driver location");
+    }
+    return updated;
   }
 }
 
@@ -95,6 +112,18 @@ function validateCreateOrder(request: CreateOrderRequest): void {
     if (!item.itemId || !item.merchantId || item.quantity <= 0) {
       throw new Error("each item requires itemId, merchantId, and positive quantity");
     }
+  }
+}
+
+function validateGeoPoint(point: GeoPoint): void {
+  if (Number.isNaN(point.lat) || Number.isNaN(point.lng)) {
+    throw new Error("Invalid coordinates");
+  }
+  if (point.lat < -90 || point.lat > 90) {
+    throw new Error("Latitude must be between -90 and 90");
+  }
+  if (point.lng < -180 || point.lng > 180) {
+    throw new Error("Longitude must be between -180 and 180");
   }
 }
 

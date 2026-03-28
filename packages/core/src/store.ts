@@ -1,6 +1,8 @@
 import {
   type CreateOrderRequest,
   type DispatchInstruction,
+  type DriverLocation,
+  type GeoPoint,
   type MerchantTask,
   type OpsTicket,
   type Order,
@@ -35,6 +37,8 @@ export interface OrderStore {
   saveDispatchInstruction(instruction: DispatchInstruction): Promise<void>;
   addOpsTicket(ticket: OpsTicket): Promise<void>;
   getOpsTickets(orderId: string): Promise<OpsTicket[]>;
+  getDriverLocation(orderId: string): Promise<DriverLocation | undefined>;
+  upsertDriverLocation(orderId: string, location: GeoPoint): Promise<void>;
   getSnapshot(orderId: string): Promise<OrderSnapshot | undefined>;
   close?(): Promise<void>;
 }
@@ -47,6 +51,7 @@ export class InMemoryStore implements OrderStore {
   private readonly routePlans = new Map<string, RoutePlan>();
   private readonly dispatchInstructions = new Map<string, DispatchInstruction>();
   private readonly opsTickets = new Map<string, OpsTicket[]>();
+  private readonly driverLocations = new Map<string, DriverLocation>();
 
   async createOrder(request: CreateOrderRequest): Promise<Order> {
     const now = isoNow();
@@ -220,6 +225,21 @@ export class InMemoryStore implements OrderStore {
     return this.opsTickets.get(orderId) ?? [];
   }
 
+  async getDriverLocation(orderId: string): Promise<DriverLocation | undefined> {
+    return this.driverLocations.get(orderId);
+  }
+
+  async upsertDriverLocation(orderId: string, location: GeoPoint): Promise<void> {
+    const existing = this.driverLocations.get(orderId);
+    const driverLocation: DriverLocation = {
+      orderId,
+      location,
+      updatedAt: existing?.updatedAt ?? isoNow(),
+    };
+    driverLocation.updatedAt = isoNow();
+    this.driverLocations.set(orderId, driverLocation);
+  }
+
   async getSnapshot(orderId: string): Promise<OrderSnapshot | undefined> {
     const order = this.orders.get(orderId);
     if (!order) {
@@ -234,6 +254,7 @@ export class InMemoryStore implements OrderStore {
       routePlan: await this.getRoutePlan(orderId),
       dispatchInstruction: await this.getDispatchInstruction(orderId),
       opsTickets: await this.getOpsTickets(orderId),
+      driverLocation: await this.getDriverLocation(orderId),
     };
   }
 }

@@ -1,6 +1,8 @@
 import type {
   CreateOrderRequest,
   DispatchInstruction,
+  DriverLocation,
+  GeoPoint,
   MerchantTask,
   OpsTicket,
   Order,
@@ -315,13 +317,34 @@ export class PrismaStore implements OrderStore {
     return rows.map(mapOpsTicket);
   }
 
+  async getDriverLocation(orderId: string): Promise<DriverLocation | undefined> {
+    const row = await this.prisma.driverLocation.findUnique({ where: { orderId } });
+    return row ? mapDriverLocation(row) : undefined;
+  }
+
+  async upsertDriverLocation(orderId: string, location: GeoPoint): Promise<void> {
+    await this.prisma.driverLocation.upsert({
+      where: { orderId },
+      update: {
+        driverLat: location.lat,
+        driverLng: location.lng,
+      },
+      create: {
+        id: crypto.randomUUID(),
+        orderId,
+        driverLat: location.lat,
+        driverLng: location.lng,
+      },
+    });
+  }
+
   async getSnapshot(orderId: string): Promise<OrderSnapshot | undefined> {
     const order = await this.getOrder(orderId);
     if (!order) {
       return undefined;
     }
 
-    const [items, merchantTasks, vendorReports, routePlan, dispatchInstruction, opsTickets] =
+    const [items, merchantTasks, vendorReports, routePlan, dispatchInstruction, opsTickets, driverLocation] =
       await Promise.all([
         this.getOrderItems(orderId),
         this.getMerchantTasks(orderId),
@@ -329,6 +352,7 @@ export class PrismaStore implements OrderStore {
         this.getRoutePlan(orderId),
         this.getDispatchInstruction(orderId),
         this.getOpsTickets(orderId),
+        this.getDriverLocation(orderId),
       ]);
 
     return {
@@ -339,6 +363,7 @@ export class PrismaStore implements OrderStore {
       routePlan,
       dispatchInstruction,
       opsTickets,
+      driverLocation,
     };
   }
 
@@ -436,6 +461,17 @@ function mapOpsTicket(row: any): OpsTicket {
     status: row.status,
     createdAt: toIso(row.createdAt),
     resolvedAt: row.resolvedAt ? toIso(row.resolvedAt) : undefined,
+  };
+}
+
+function mapDriverLocation(row: any): DriverLocation {
+  return {
+    orderId: row.orderId,
+    location: {
+      lat: row.driverLat,
+      lng: row.driverLng,
+    },
+    updatedAt: toIso(row.updatedAt),
   };
 }
 

@@ -2,6 +2,8 @@ import { apiRequest, ApiError } from "@/api/client";
 import type {
   CreateOrderRequest,
   CreateOrderResponse,
+  DriverLocation,
+  GeoPoint,
   OrderSnapshot,
   RoutePlan,
   UserRoutesResponse,
@@ -42,4 +44,25 @@ export async function cancelOrder(orderId: string): Promise<{ orderId: string; s
 
 export async function getUserRoutes(userId: string): Promise<UserRoutesResponse> {
   return apiRequest(`/api/v1/users/${userId}/routes`);
+}
+
+export async function getDriverLocation(orderId: string): Promise<DriverLocation | null> {
+  try {
+    return await apiRequest<DriverLocation>(`/api/v1/orders/${orderId}/driver-location`);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function updateDriverLocation(
+  orderId: string,
+  location: GeoPoint,
+): Promise<DriverLocation> {
+  return apiRequest(`/api/v1/orders/${orderId}/driver-location`, {
+    method: "PUT",
+    body: JSON.stringify(location),
+  });
 }

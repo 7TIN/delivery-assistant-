@@ -1,4 +1,4 @@
-import type { CreateOrderRequest } from "../../../packages/contracts/src";
+import type { CreateOrderRequest, GeoPoint } from "../../../packages/contracts/src";
 import { checkOsrmApiAvailability, createRuntimeContext, registerAllWorkers } from "../../../packages/core/src";
 import { resolveQueueDriver } from "../../../packages/queue/src";
 
@@ -64,6 +64,20 @@ const server = Bun.serve({
         return json(route);
       }
 
+      if (orderMatch && request.method === "GET" && orderMatch.action === "driver-location") {
+        const driverLocation = await context.services.orderApi.getDriverLocation(orderMatch.orderId);
+        if (!driverLocation) {
+          return json({ error: "Driver location not found" }, 404);
+        }
+        return json(driverLocation);
+      }
+
+      if (orderMatch && request.method === "PUT" && orderMatch.action === "driver-location") {
+        const body = (await request.json()) as GeoPoint;
+        const driverLocation = await context.services.orderApi.updateDriverLocation(orderMatch.orderId, body);
+        return json(driverLocation);
+      }
+
       return json({ error: "Not found" }, 404);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -111,7 +125,7 @@ async function logRoutingDiagnostics(): Promise<void> {
 }
 
 function matchOrderPath(path: string):
-  | { orderId: string; action: "root" | "cancel" | "route" }
+  | { orderId: string; action: "root" | "cancel" | "route" | "driver-location" }
   | undefined {
   const root = path.match(/^\/api\/v1\/orders\/([^/]+)$/);
   if (root?.[1]) {
@@ -126,6 +140,11 @@ function matchOrderPath(path: string):
   const route = path.match(/^\/api\/v1\/orders\/([^/]+)\/route$/);
   if (route?.[1]) {
     return { orderId: route[1], action: "route" };
+  }
+
+  const driverLocation = path.match(/^\/api\/v1\/orders\/([^/]+)\/driver-location$/);
+  if (driverLocation?.[1]) {
+    return { orderId: driverLocation[1], action: "driver-location" };
   }
 
   return undefined;

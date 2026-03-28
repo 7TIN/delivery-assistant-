@@ -8,21 +8,22 @@ datasource db {
 }
 
 model Order {
-  id                  String                @id
-  userId              String
-  status              String
-  deliveryLat         Float
-  deliveryLng         Float
-  deliveryAddress     String
-  createdAt           DateTime
-  updatedAt           DateTime
-  canceledAt          DateTime?
-  items               OrderItem[]
-  merchantTasks       MerchantTask[]
-  vendorReports       VendorReport[]
-  routePlans          RoutePlan[]
+  id                   String                @id
+  userId               String
+  status               String
+  deliveryLat          Float
+  deliveryLng          Float
+  deliveryAddress      String
+  createdAt            DateTime
+  updatedAt            DateTime
+  canceledAt           DateTime?
+  items                OrderItem[]
+  merchantTasks        MerchantTask[]
+  vendorReports        VendorReport[]
+  routePlans           RoutePlan[]
   dispatchInstructions DispatchInstruction[]
-  opsTickets          OpsTicket[]
+  opsTickets           OpsTicket[]
+  driverLocation       DriverLocation?
 
   @@index([status])
   @@index([createdAt])
@@ -59,50 +60,50 @@ model MerchantTask {
 }
 
 model VendorReport {
-  id          String   @id
-  orderId     String
-  merchantId  String
+  id           String   @id
+  orderId      String
+  merchantId   String
   availability String
-  etaReadyAt  DateTime
-  confidence  Float
-  source      String
-  reportedAt  DateTime
-  notes       String?
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  etaReadyAt   DateTime
+  confidence   Float
+  source       String
+  reportedAt   DateTime
+  notes        String?
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@unique([orderId, merchantId])
   @@index([orderId])
 }
 
 model RoutePlan {
-  id                   String   @id
-  orderId              String
-  version              Int
-  stops                Json
+  id                    String   @id
+  orderId               String
+  version               Int
+  stops                 Json
   estimatedCompletionAt DateTime
-  objectiveScore       Float
-  generatedAt          DateTime
-  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  objectiveScore        Float
+  generatedAt           DateTime
+  order                 Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@unique([orderId, version])
   @@index([orderId])
 }
 
 model DispatchInstruction {
-  id                  String   @id
-  orderId             String
-  routeVersion        Int
-  nextStop            Json?
-  pickupNotes         String
+  id                   String   @id
+  orderId              String
+  routeVersion         Int
+  nextStop             Json?
+  pickupNotes          String
   etaToNextStopMinutes Int
-  issuedAt            DateTime
-  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  issuedAt             DateTime
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId, issuedAt])
 }
 
 model OpsTicket {
-  id         String   @id
+  id         String    @id
   orderId    String
   merchantId String
   reason     String
@@ -110,8 +111,19 @@ model OpsTicket {
   status     String
   createdAt  DateTime
   resolvedAt DateTime?
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([status])
+}
+
+model DriverLocation {
+  id        String   @id
+  orderId   String   @unique
+  driverLat Float
+  driverLng Float
+  updatedAt DateTime @updatedAt
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }
