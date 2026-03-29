@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Minus, PackageCheck, Plus, Route, Sparkles } from "lucide-react";
+import { MapPin, Minus, PackageCheck, Plus, Route, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { deliveryPresets, merchantCatalog } from "@/data/catalog";
@@ -18,11 +18,16 @@ const inputClassName =
 export default function CreateOrderPage() {
   const navigate = useNavigate();
   const createOrderMutation = useCreateOrder();
-  const [userId, setUserId] = usePersistentState("delivery.userId", "user_demo");
-  const [selectedDeliveryId, setSelectedDeliveryId] = useState(deliveryPresets[0]?.id ?? "");
-  const [address, setAddress] = useState(deliveryPresets[0]?.location.address ?? "");
-  const [lat, setLat] = useState(String(deliveryPresets[0]?.location.lat ?? 0));
-  const [lng, setLng] = useState(String(deliveryPresets[0]?.location.lng ?? 0));
+  const [userId, setUserId] = usePersistentState<string>("delivery.userId", "user_demo");
+
+  // No preset pre-selected — each user must explicitly pick a delivery location.
+  // This prevents all orders from silently defaulting to presets[0] and
+  // stacking destination markers on top of each other on the map.
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState("");
+  const [address, setAddress] = useState("");
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
+
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
   const selectedItems = useMemo(
@@ -35,6 +40,11 @@ export default function CreateOrderPage() {
 
   const total = selectedItems.reduce((sum, entry) => sum + entry.item.price * entry.quantity, 0);
 
+  // Gate the submit button — delivery location is required
+  const hasDeliveryLocation =
+    address.trim().length > 0 && lat !== "" && lng !== "" &&
+    !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
+
   const updateQuantity = (itemId: string, nextQuantity: number) => {
     setQuantities((current) => ({
       ...current,
@@ -45,19 +55,14 @@ export default function CreateOrderPage() {
   const handleDeliveryPresetChange = (presetId: string) => {
     setSelectedDeliveryId(presetId);
     const preset = deliveryPresets.find((item) => item.id === presetId);
-    if (!preset) {
-      return;
-    }
-
+    if (!preset) return;
     setAddress(preset.location.address);
     setLat(String(preset.location.lat));
     setLng(String(preset.location.lng));
   };
 
   const submitOrder = async () => {
-    if (selectedItems.length === 0) {
-      return;
-    }
+    if (selectedItems.length === 0 || !hasDeliveryLocation) return;
 
     const payload: CreateOrderRequest = {
       userId,
@@ -114,6 +119,7 @@ export default function CreateOrderPage() {
             </div>
           </div>
           <div className="mt-5 grid gap-4">
+            {/* User ID */}
             <div>
               <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 User id
@@ -125,62 +131,94 @@ export default function CreateOrderPage() {
                 placeholder="user_demo"
               />
             </div>
+
+            {/* Delivery preset — card-picker, no default ─────────────────── */}
             <div>
-              <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                Delivery preset
-              </label>
-              <select
-                value={selectedDeliveryId}
-                onChange={(event) => handleDeliveryPresetChange(event.target.value)}
-                className={cn(inputClassName, "mt-2 w-full appearance-none")}
-              >
-                {deliveryPresets.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {deliveryPresets.find((item) => item.id === selectedDeliveryId)?.blurb}
-              </p>
-            </div>
-            <div>
-              <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                Address
-              </label>
-              <input
-                value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                className={cn(inputClassName, "mt-2 w-full")}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
+              <div className="flex items-center justify-between">
                 <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                  Latitude
+                  Delivery location
                 </label>
-                <input
-                  value={lat}
-                  onChange={(event) => setLat(event.target.value)}
-                  className={cn(inputClassName, "mt-2 w-full")}
-                />
+                {!selectedDeliveryId && (
+                  <span className="flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                    <MapPin className="h-3 w-3" />
+                    Required
+                  </span>
+                )}
               </div>
-              <div>
-                <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                  Longitude
-                </label>
-                <input
-                  value={lng}
-                  onChange={(event) => setLng(event.target.value)}
-                  className={cn(inputClassName, "mt-2 w-full")}
-                />
+
+              <div className="mt-2 grid gap-2">
+                {deliveryPresets.map((preset) => {
+                  const isSelected = selectedDeliveryId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => handleDeliveryPresetChange(preset.id)}
+                      className={cn(
+                        "w-full rounded-2xl border px-4 py-3 text-left text-sm transition-all",
+                        isSelected
+                          ? "border-primary/30 bg-primary/10 text-primary ring-4 ring-primary/10"
+                          : "border-border/80 bg-background/70 text-muted-foreground hover:border-border hover:text-foreground",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium">{preset.label}</p>
+                        {isSelected && (
+                          <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
+                            Selected
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs opacity-70">{preset.blurb}</p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
+            {/* Fine-tune address / coords — only shown once a preset is chosen */}
+            {selectedDeliveryId && (
+              <>
+                <div>
+                  <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                    Address
+                  </label>
+                  <input
+                    value={address}
+                    onChange={(event) => setAddress(event.target.value)}
+                    className={cn(inputClassName, "mt-2 w-full")}
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      Latitude
+                    </label>
+                    <input
+                      value={lat}
+                      onChange={(event) => setLat(event.target.value)}
+                      className={cn(inputClassName, "mt-2 w-full")}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      Longitude
+                    </label>
+                    <input
+                      value={lng}
+                      onChange={(event) => setLng(event.target.value)}
+                      className={cn(inputClassName, "mt-2 w-full")}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </SurfaceCard>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.65fr_1fr]">
+        {/* Catalog ─────────────────────────────────────────────────────────── */}
         <div className="space-y-4">
           {merchantCatalog.map((entry) => {
             const quantity = quantities[entry.itemId] ?? 0;
@@ -241,6 +279,7 @@ export default function CreateOrderPage() {
           })}
         </div>
 
+        {/* Order summary sidebar ────────────────────────────────────────────── */}
         <div className="space-y-4 xl:sticky xl:top-24 xl:self-start">
           <SurfaceCard>
             <div className="flex items-center gap-3">
@@ -252,8 +291,22 @@ export default function CreateOrderPage() {
                 <h3 className="text-lg font-semibold tracking-tight">What will be sent</h3>
               </div>
             </div>
+
             <div className="mt-5 rounded-[1.25rem] border border-border/60 bg-background/70 p-4">
               <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Delivery location</span>
+                <span
+                  className={cn(
+                    "font-semibold",
+                    hasDeliveryLocation ? "text-foreground" : "text-amber-600 dark:text-amber-400",
+                  )}
+                >
+                  {hasDeliveryLocation
+                    ? deliveryPresets.find((p) => p.id === selectedDeliveryId)?.label ?? "Custom"
+                    : "Not selected"}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Selected line items</span>
                 <span className="font-semibold text-foreground">{selectedItems.length}</span>
               </div>
@@ -276,7 +329,10 @@ export default function CreateOrderPage() {
                 </p>
               ) : (
                 selectedItems.map(({ item, quantity }) => (
-                  <div key={item.itemId} className="rounded-[1.25rem] border border-border/60 bg-background/60 px-4 py-4">
+                  <div
+                    key={item.itemId}
+                    className="rounded-[1.25rem] border border-border/60 bg-background/60 px-4 py-4"
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-medium text-foreground">{item.itemName}</p>
@@ -297,15 +353,27 @@ export default function CreateOrderPage() {
               </div>
             )}
 
+            {/* Contextual hint when delivery location is missing */}
+            {!hasDeliveryLocation && selectedItems.length > 0 && (
+              <div className="mt-4 flex items-center gap-2 rounded-[1.25rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800/40 dark:bg-amber-900/20 dark:text-amber-400">
+                <MapPin className="h-4 w-4 shrink-0" />
+                Select a delivery location above to continue.
+              </div>
+            )}
+
             <Button
               type="button"
               className="mt-5 w-full rounded-2xl"
               size="lg"
-              disabled={selectedItems.length === 0 || createOrderMutation.isPending}
+              disabled={
+                selectedItems.length === 0 ||
+                !hasDeliveryLocation ||
+                createOrderMutation.isPending
+              }
               onClick={() => void submitOrder()}
             >
               <Route className="h-4 w-4" />
-              {createOrderMutation.isPending ? "Creating live order..." : "Create live order"}
+              {createOrderMutation.isPending ? "Creating live order…" : "Create live order"}
             </Button>
           </SurfaceCard>
         </div>
