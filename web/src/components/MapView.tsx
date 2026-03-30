@@ -4,7 +4,11 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import type { DisplayRouteStop } from "@/lib/order-presenters";
-import type { DeliveryLocation, DriverLocation, GeoPoint } from "@/types/contracts";
+import type {
+  DeliveryLocation,
+  DriverLocation,
+  GeoPoint,
+} from "@/types/contracts";
 import { getRouteColor } from "./UserControl";
 
 // ---------------------------------------------------------------------------
@@ -118,6 +122,38 @@ const driverIcon = L.divIcon({
 // OSRM road-route fetcher
 // ---------------------------------------------------------------------------
 
+function optimizeWaypointOrder(
+  start: { lat: number; lng: number },
+  stops: { lat: number; lng: number }[],
+  end?: { lat: number; lng: number },
+) {
+  const remaining = [...stops];
+  const ordered: { lat: number; lng: number }[] = [];
+
+  let current = start;
+
+  while (remaining.length > 0) {
+    let nearestIndex = 0;
+    let nearestDist = Infinity;
+
+    remaining.forEach((point, i) => {
+      const dist =
+        (point.lat - current.lat) ** 2 + (point.lng - current.lng) ** 2;
+
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestIndex = i;
+      }
+    });
+
+    const next = remaining.splice(nearestIndex, 1)[0];
+    ordered.push(next);
+    current = next;
+  }
+
+  return end ? [start, ...ordered, end] : [start, ...ordered];
+}
+
 async function fetchRoadRoute(
   waypoints: { lat: number; lng: number }[],
 ): Promise<[number, number][]> {
@@ -126,7 +162,10 @@ async function fetchRoadRoute(
   const res = await fetch(url);
   const data = await res.json();
   if (data.code !== "Ok") throw new Error("OSRM routing failed");
-  return data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => [lat, lng]);
+  return data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => [
+    lat,
+    lng,
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +220,10 @@ export function MapView({
   const driverPosition = useMemo<[number, number] | null>(
     () =>
       driverLocation
-        ? [extractGeoPoint(driverLocation).lat, extractGeoPoint(driverLocation).lng]
+        ? [
+            extractGeoPoint(driverLocation).lat,
+            extractGeoPoint(driverLocation).lng,
+          ]
         : null,
     [driverLocation],
   );
@@ -191,7 +233,8 @@ export function MapView({
     if (deliveryLocation) return [deliveryLocation.lat, deliveryLocation.lng];
     if (multiUserRoutes && multiUserRoutes.length > 0) {
       const first = multiUserRoutes.find((r) => r.deliveryLocation);
-      if (first?.deliveryLocation) return [first.deliveryLocation.lat, first.deliveryLocation.lng];
+      if (first?.deliveryLocation)
+        return [first.deliveryLocation.lat, first.deliveryLocation.lng];
     }
     return DEFAULT_CENTER;
   }, [deliveryLocation, driverPosition, multiUserRoutes]);
@@ -200,8 +243,12 @@ export function MapView({
   const positions = useMemo<[number, number][]>(
     () => [
       ...(driverPosition ? [driverPosition] : []),
-      ...(stops?.map((s) => [s.location.lat, s.location.lng] as [number, number]) ?? []),
-      ...(deliveryLocation ? [[deliveryLocation.lat, deliveryLocation.lng] as [number, number]] : []),
+      ...(stops?.map(
+        (s) => [s.location.lat, s.location.lng] as [number, number],
+      ) ?? []),
+      ...(deliveryLocation
+        ? [[deliveryLocation.lat, deliveryLocation.lng] as [number, number]]
+        : []),
     ],
     [deliveryLocation, stops, driverPosition],
   );
@@ -239,11 +286,14 @@ export function MapView({
       maxBoundsViscosity: 1.0,
     }).setView(center, 14);
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      maxZoom: 19,
-    }).addTo(map);
+    L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      {
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+        maxZoom: 19,
+      },
+    ).addTo(map);
 
     mapInstanceRef.current = map;
     layerGroupRef.current = L.layerGroup().addTo(map);
@@ -274,7 +324,11 @@ export function MapView({
       try {
         const latlngs = await fetchRoadRoute(waypoints);
         // White casing for contrast against map tiles
-        L.polyline(latlngs, { color: "#ffffff", weight: 8, opacity: 0.45 }).addTo(layers);
+        L.polyline(latlngs, {
+          color: "#ffffff",
+          weight: 8,
+          opacity: 0.45,
+        }).addTo(layers);
         L.polyline(latlngs, { color, weight: 5, opacity: 0.88 }).addTo(layers);
       } catch {
         // Graceful fallback to dashed straight line
@@ -287,7 +341,6 @@ export function MapView({
 
     // ── MULTI-USER MODE ────────────────────────────────────────────────────
     if (multiUserRoutes && multiUserRoutes.length > 0) {
-
       // Collect all delivery destinations with their user colour so we can
       // apply the spiral offset before placing any markers.
       const rawDestinations = multiUserRoutes
@@ -342,7 +395,9 @@ export function MapView({
 
       // ── Place destination markers (with offsets) ──────────────────────────
       offsetDestinations.forEach((dest) => {
-        L.marker([dest.lat, dest.lng], { icon: createDestinationIcon(dest.colorBg) })
+        L.marker([dest.lat, dest.lng], {
+          icon: createDestinationIcon(dest.colorBg),
+        })
           .bindPopup(
             `<div style="font-family:Inter,sans-serif;font-size:13px;">
               <strong>${dest.userId}</strong><br/>
@@ -389,20 +444,35 @@ export function MapView({
         });
 
         // Route polyline: driver → stops → delivery (use offset destination)
-        const destOffset = offsetDestinations.find((d) => d.userId === route.userId);
+        const destOffset = offsetDestinations.find(
+          (d) => d.userId === route.userId,
+        );
         if (destOffset) {
           waypoints.push({ lat: destOffset.lat, lng: destOffset.lng });
         } else if (route.deliveryLocation) {
-          waypoints.push({ lat: route.deliveryLocation.lat, lng: route.deliveryLocation.lng });
+          waypoints.push({
+            lat: route.deliveryLocation.lat,
+            lng: route.deliveryLocation.lng,
+          });
         }
 
         if (waypoints.length >= 2) {
-          void renderRoute(waypoints, color.bg);
+          const start = waypoints[0];
+          const end = waypoints[waypoints.length - 1];
+
+          const middleStops = waypoints.slice(1, -1);
+
+          const optimized = optimizeWaypointOrder(start, middleStops, end);
+
+          void renderRoute(optimized, color.bg);
         }
       }
 
       if (allPositions.length > 0) {
-        map.fitBounds(L.latLngBounds(allPositions), { padding: [40, 40], maxZoom: 15 });
+        map.fitBounds(L.latLngBounds(allPositions), {
+          padding: [40, 40],
+          maxZoom: 15,
+        });
       }
       return;
     }
@@ -452,14 +522,28 @@ export function MapView({
     // Route polyline: driver → stops → destination
     if (positions.length > 1) {
       const waypoints = [
-        ...(driverPosition ? [{ lat: driverPosition[0], lng: driverPosition[1] }] : []),
-        ...(stops?.map((s) => ({ lat: s.location.lat, lng: s.location.lng })) ?? []),
-        ...(deliveryLocation ? [{ lat: deliveryLocation.lat, lng: deliveryLocation.lng }] : []),
+        ...(driverPosition
+          ? [{ lat: driverPosition[0], lng: driverPosition[1] }]
+          : []),
+        ...(stops?.map((s) => ({ lat: s.location.lat, lng: s.location.lng })) ??
+          []),
+        ...(deliveryLocation
+          ? [{ lat: deliveryLocation.lat, lng: deliveryLocation.lng }]
+          : []),
       ];
 
-      void renderRoute(waypoints, "#0f766e");
+      const start = waypoints[0];
+      const end = waypoints[waypoints.length - 1];
+      const middleStops = waypoints.slice(1, -1);
 
-      map.fitBounds(L.latLngBounds(positions), { padding: [40, 40], maxZoom: 15 });
+      const optimized = optimizeWaypointOrder(start, middleStops, end);
+
+      void renderRoute(optimized, "#0f766e");
+
+      map.fitBounds(L.latLngBounds(positions), {
+        padding: [40, 40],
+        maxZoom: 15,
+      });
     } else if (positions.length === 1 && positions[0]) {
       map.setView(positions[0], 14);
     } else {
@@ -476,7 +560,8 @@ export function MapView({
   ]);
 
   const containerClass =
-    className ?? "h-[400px] w-full overflow-hidden rounded-[1.5rem] border border-white/70";
+    className ??
+    "h-[400px] w-full overflow-hidden rounded-[1.5rem] border border-white/70";
 
   return (
     <div className={containerClass}>
