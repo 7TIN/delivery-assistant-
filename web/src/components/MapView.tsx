@@ -9,19 +9,12 @@ import type {
   DriverLocation,
   GeoPoint,
 } from "@/types/contracts";
-import { getRouteColor } from "./UserControl";
+import { getRouteColor } from "@/lib/route-colors";
+// import { getRouteColor } from "./UserControl";
 
 // ---------------------------------------------------------------------------
-// Overlap offset utility
+// Overlap offset utility (USED ONLY FOR VISUAL MARKERS)
 // ---------------------------------------------------------------------------
-
-/**
- * Groups items by identical lat/lng (to 5 decimal places ≈ 1 m precision)
- * and fans out duplicates in a tight spiral so every marker stays visible
- * and clickable even when multiple orders share the same address.
- *
- * offsetMeters: radial nudge in metres per overlap ring (~10 m default)
- */
 function applyOverlapOffsets<T extends { lat: number; lng: number }>(
   items: T[],
   offsetMeters = 10,
@@ -35,21 +28,14 @@ function applyOverlapOffsets<T extends { lat: number; lng: number }>(
     buckets.set(key, bucket);
   });
 
-  // 1 degree latitude ≈ 111 320 m
   const latDegPerMeter = 1 / 111320;
-
-  const result = items.map((item) => ({ ...item })) as (T & {
-    lat: number;
-    lng: number;
-  })[];
+  const result = items.map((item) => ({ ...item })) as (T & { lat: number; lng: number })[];
 
   buckets.forEach((indices) => {
     if (indices.length <= 1) return;
 
     indices.forEach((idx, slot) => {
-      if (slot === 0) return; // keep the first marker exactly on the address
-
-      // Spread evenly around a circle; grow the radius for every 6 extras
+      if (slot === 0) return; 
       const ring = Math.ceil(slot / 6);
       const angleStep = (2 * Math.PI) / Math.min(indices.length - 1, 6);
       const angle = angleStep * ((slot - 1) % 6);
@@ -74,7 +60,6 @@ function applyOverlapOffsets<T extends { lat: number; lng: number }>(
 // ---------------------------------------------------------------------------
 // Icon factories
 // ---------------------------------------------------------------------------
-
 function createStopIcon(num: number, state: DisplayRouteStop["state"]) {
   const palette =
     state === "active"
@@ -119,53 +104,135 @@ const driverIcon = L.divIcon({
 });
 
 // ---------------------------------------------------------------------------
-// OSRM road-route fetcher
+// Global Smart Dispatch Logic (Process Scheduling style)
 // ---------------------------------------------------------------------------
 
-function optimizeWaypointOrder(
-  start: { lat: number; lng: number },
-  stops: { lat: number; lng: number }[],
-  end?: { lat: number; lng: number },
-) {
-  const remaining = [...stops];
-  const ordered: { lat: number; lng: number }[] = [];
-
-  let current = start;
-
-  while (remaining.length > 0) {
-    let nearestIndex = 0;
-    let nearestDist = Infinity;
-
-    remaining.forEach((point, i) => {
-      const dist =
-        (point.lat - current.lat) ** 2 + (point.lng - current.lng) ** 2;
-
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearestIndex = i;
-      }
-    });
-
-    const next = remaining.splice(nearestIndex, 1)[0];
-    ordered.push(next);
-    current = next;
-  }
-
-  return end ? [start, ...ordered, end] : [start, ...ordered];
+interface RoutingTask {
+  userId: string;
+  type: "pickup" | "delivery";
+  lat: number;
+  lng: number;
 }
 
-async function fetchRoadRoute(
-  waypoints: { lat: number; lng: number }[],
-): Promise<[number, number][]> {
+/**
+ * Calculates a single optimal driver path across multiple users.
+ * Constraint: A user's delivery location is only visited AFTER all their merchants are visited.
+ */
+function calculateGlobalOptimizedRoute(
+  multiUserRoutes: UserRouteData[],
+  driverPosition?: [number, number] | null
+): { lat: number; lng: number }[] {
+
+  const unvisitedPickups: RoutingTask[] = [];
+  const pendingDeliveries = new Map<string, RoutingTask>();
+  const pickupRequirements = new Map<string, number>();
+  const completedPickups = new Map<string, number>();
+
+  // 1. Build the "Process Queue"
+  multiUserRoutes.forEach((route) => {
+    const stops = route.stops ?? [];
+    pickupRequirements.set(route.userId, stops.length);
+    completedPickups.set(route.userId, 0);
+
+    stops.forEach((stop) => {
+      unvisitedPickups.push({
+        userId: route.userId,
+        type: "pickup",
+        lat: stop.location.lat,
+        lng: stop.location.lng,
+      });
+    });
+
+    if (route.deliveryLocation) {
+      pendingDeliveries.set(route.userId, {
+        userId: route.userId,
+        type: "delivery",
+        lat: route.deliveryLocation.lat,
+        lng: route.deliveryLocation.lng,
+      });
+    }
+  });
+
+  const finalPath: { lat: number; lng: number }[] = [];
+  
+  // Start at Driver, OR first pickup, OR first delivery
+  let currentLoc: { lat: number; lng: number } | null = null;
+
+  if (driverPosition) {
+    currentLoc = { lat: driverPosition[0], lng: driverPosition[1] };
+  } else if (unvisitedPickups.length > 0 && unvisitedPickups[0]) {
+    currentLoc = { lat: unvisitedPickups[0].lat, lng: unvisitedPickups[0].lng };
+  } else if (pendingDeliveries.size > 0) {
+    const firstDelivery = Array.from(pendingDeliveries.values())[0];
+    if (firstDelivery) {
+        currentLoc = { lat: firstDelivery.lat, lng: firstDelivery.lng };
+    }
+  }
+
+  // If there are literally no coordinates provided anywhere, exit early.
+  if (!currentLoc) return [];
+
+  finalPath.push(currentLoc);
+
+  // 2. Execute Preemptive Greedy TSP Scheduling
+  while (unvisitedPickups.length > 0 || pendingDeliveries.size > 0) {
+    let nextTask: RoutingTask | null = null;
+    let bestIdx = -1;
+    let shortestDist = Infinity;
+
+    // Check Unvisited Pickups using standard 'for' loop for proper TS Control Flow
+    for (let i = 0; i < unvisitedPickups.length; i++) {
+      const task = unvisitedPickups[i];
+      if (!task) continue;
+      
+      const dist = (task.lat - currentLoc.lat) ** 2 + (task.lng - currentLoc.lng) ** 2;
+      if (dist < shortestDist) {
+        shortestDist = dist;
+        nextTask = task;
+        bestIdx = i;
+      }
+    }
+
+    // Check UNLOCKED Deliveries using 'for...of' for proper TS Control Flow
+    for (const [userId, task] of pendingDeliveries.entries()) {
+      const required = pickupRequirements.get(userId) || 0;
+      const completed = completedPickups.get(userId) || 0;
+      
+      if (completed >= required) { // Valid ONLY if all food/items are picked up
+        const dist = (task.lat - currentLoc.lat) ** 2 + (task.lng - currentLoc.lng) ** 2;
+        if (dist < shortestDist) {
+          shortestDist = dist;
+          nextTask = task;
+          bestIdx = -1; // Flag as delivery
+        }
+      }
+    }
+
+    // Graceful exit if data is missing or corrupt
+    if (!nextTask || !currentLoc) break; 
+
+    finalPath.push({ lat: nextTask.lat, lng: nextTask.lng });
+    currentLoc = { lat: nextTask.lat, lng: nextTask.lng };
+
+    // Update state
+    if (nextTask.type === "pickup") {
+      unvisitedPickups.splice(bestIdx, 1);
+      completedPickups.set(nextTask.userId, (completedPickups.get(nextTask.userId) || 0) + 1);
+    } else {
+      pendingDeliveries.delete(nextTask.userId);
+    }
+  }
+
+  return finalPath;
+}
+
+async function fetchRoadRoute(waypoints: { lat: number; lng: number }[]): Promise<[number, number][]> {
   const coords = waypoints.map((p) => `${p.lng},${p.lat}`).join(";");
   const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
   const res = await fetch(url);
   const data = await res.json();
   if (data.code !== "Ok") throw new Error("OSRM routing failed");
-  return data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => [
-    lat,
-    lng,
-  ]);
+  return data.routes[0].geometry.coordinates.map(([lng, lat]: number[]) => [lat, lng]);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,9 +259,16 @@ interface MapViewProps {
   multiUserRoutes?: UserRouteData[];
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+// Strictly type the raw stops to replace 'any'
+interface RawStop {
+  lat: number;
+  lng: number;
+  stop: DisplayRouteStop;
+  routeIdx: number;
+  stopIdx: number;
+  colorBg: string;
+  userId: string;
+}
 
 const DEFAULT_CENTER: [number, number] = [37.7749, -122.4194];
 const SF_BOUNDS: [[number, number], [number, number]] = [
@@ -218,13 +292,7 @@ export function MapView({
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
 
   const driverPosition = useMemo<[number, number] | null>(
-    () =>
-      driverLocation
-        ? [
-            extractGeoPoint(driverLocation).lat,
-            extractGeoPoint(driverLocation).lng,
-          ]
-        : null,
+    () => driverLocation ? [extractGeoPoint(driverLocation).lat, extractGeoPoint(driverLocation).lng] : null,
     [driverLocation],
   );
 
@@ -233,47 +301,27 @@ export function MapView({
     if (deliveryLocation) return [deliveryLocation.lat, deliveryLocation.lng];
     if (multiUserRoutes && multiUserRoutes.length > 0) {
       const first = multiUserRoutes.find((r) => r.deliveryLocation);
-      if (first?.deliveryLocation)
-        return [first.deliveryLocation.lat, first.deliveryLocation.lng];
+      if (first?.deliveryLocation) return [first.deliveryLocation.lat, first.deliveryLocation.lng];
     }
     return DEFAULT_CENTER;
   }, [deliveryLocation, driverPosition, multiUserRoutes]);
 
-  // Single-user positions (used for fitBounds + single-route rendering)
-  const positions = useMemo<[number, number][]>(
-    () => [
-      ...(driverPosition ? [driverPosition] : []),
-      ...(stops?.map(
-        (s) => [s.location.lat, s.location.lng] as [number, number],
-      ) ?? []),
-      ...(deliveryLocation
-        ? [[deliveryLocation.lat, deliveryLocation.lng] as [number, number]]
-        : []),
-    ],
-    [deliveryLocation, stops, driverPosition],
-  );
-
-  // All positions across all routes (used for fitBounds in multi-user mode)
   const allPositions = useMemo<[number, number][]>(() => {
-    if (!multiUserRoutes || multiUserRoutes.length === 0) return positions;
     const all: [number, number][] = [];
     if (driverPosition) all.push(driverPosition);
-    for (const route of multiUserRoutes) {
-      if (route.driverLocation) {
-        const p = extractGeoPoint(route.driverLocation);
-        all.push([p.lat, p.lng]);
-      }
-      for (const stop of route.stops ?? []) {
-        all.push([stop.location.lat, stop.location.lng]);
-      }
-      if (route.deliveryLocation) {
-        all.push([route.deliveryLocation.lat, route.deliveryLocation.lng]);
-      }
+    if (multiUserRoutes) {
+      multiUserRoutes.forEach((route) => {
+        route.stops?.forEach(s => all.push([s.location.lat, s.location.lng]));
+        if (route.deliveryLocation) all.push([route.deliveryLocation.lat, route.deliveryLocation.lng]);
+      });
+    } else {
+      stops?.forEach(s => all.push([s.location.lat, s.location.lng]));
+      if (deliveryLocation) all.push([deliveryLocation.lat, deliveryLocation.lng]);
     }
-    return all.length > 0 ? all : positions;
-  }, [multiUserRoutes, positions, driverPosition]);
+    return all.length > 0 ? all : [center];
+  }, [multiUserRoutes, stops, deliveryLocation, driverPosition, center]);
 
-  // ── Map initialisation (runs once) ────────────────────────────────────────
+
   useEffect(() => {
     if (!containerRef.current || mapInstanceRef.current) return;
 
@@ -286,14 +334,10 @@ export function MapView({
       maxBoundsViscosity: 1.0,
     }).setView(center, 14);
 
-    L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-      {
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-        maxZoom: 19,
-      },
-    ).addTo(map);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      maxZoom: 19,
+    }).addTo(map);
 
     mapInstanceRef.current = map;
     layerGroupRef.current = L.layerGroup().addTo(map);
@@ -307,7 +351,6 @@ export function MapView({
     };
   }, [center]);
 
-  // ── Marker + route rendering (re-runs when data changes) ──────────────────
   useEffect(() => {
     const map = mapInstanceRef.current;
     const layers = layerGroupRef.current;
@@ -315,254 +358,90 @@ export function MapView({
 
     layers.clearLayers();
 
-    // ── Helper: draw road route with white casing ──────────────────────────
-    const renderRoute = async (
-      waypoints: { lat: number; lng: number }[],
-      color: string,
-    ) => {
+    const renderRouteLine = async (waypoints: { lat: number; lng: number }[], color: string) => {
       if (waypoints.length < 2) return;
       try {
         const latlngs = await fetchRoadRoute(waypoints);
-        // White casing for contrast against map tiles
-        L.polyline(latlngs, {
-          color: "#ffffff",
-          weight: 8,
-          opacity: 0.45,
-        }).addTo(layers);
-        L.polyline(latlngs, { color, weight: 5, opacity: 0.88 }).addTo(layers);
+        L.polyline(latlngs, { color: "#ffffff", weight: 8, opacity: 0.5 }).addTo(layers);
+        L.polyline(latlngs, { color, weight: 5, opacity: 0.9 }).addTo(layers);
       } catch {
-        // Graceful fallback to dashed straight line
-        L.polyline(
-          waypoints.map((p) => [p.lat, p.lng] as [number, number]),
-          { color, weight: 4, opacity: 0.6, dashArray: "10 6" },
-        ).addTo(layers);
+        L.polyline(waypoints.map((p) => [p.lat, p.lng] as [number, number]), { color, weight: 4, opacity: 0.6, dashArray: "10 6" }).addTo(layers);
       }
     };
 
     // ── MULTI-USER MODE ────────────────────────────────────────────────────
     if (multiUserRoutes && multiUserRoutes.length > 0) {
-      // Collect all delivery destinations with their user colour so we can
-      // apply the spiral offset before placing any markers.
-      const rawDestinations = multiUserRoutes
-        .filter((r) => r.deliveryLocation)
-        .map((r) => ({
-          lat: r.deliveryLocation!.lat,
-          lng: r.deliveryLocation!.lng,
-          address: r.deliveryLocation!.address,
-          userId: r.userId,
-          colorBg: getRouteColor(r.userIndex).bg,
-        }));
-
+      
+      const rawDestinations = multiUserRoutes.filter((r) => r.deliveryLocation).map((r) => ({
+        lat: r.deliveryLocation!.lat, lng: r.deliveryLocation!.lng, address: r.deliveryLocation!.address, userId: r.userId, colorBg: getRouteColor(r.userIndex).bg,
+      }));
       const offsetDestinations = applyOverlapOffsets(rawDestinations, 12);
 
-      // Also collect stop positions per route for offset (same merchant can
-      // appear in multiple routes).
-      type RawStop = {
-        lat: number;
-        lng: number;
-        stop: DisplayRouteStop;
-        routeIdx: number;
-        stopIdx: number;
-        colorBg: string;
-        userId: string;
-      };
-
-      const rawStops: RawStop[] = [];
+      const rawStops: RawStop[] = []; // Replaced 'any' with explicit interface
       multiUserRoutes.forEach((route) => {
-        (route.stops ?? []).forEach((stop, stopIdx) => {
-          rawStops.push({
-            lat: stop.location.lat,
-            lng: stop.location.lng,
-            stop,
-            routeIdx: route.userIndex,
-            stopIdx,
-            colorBg: getRouteColor(route.userIndex).bg,
-            userId: route.userId,
+        route.stops?.forEach((stop, stopIdx) => {
+          rawStops.push({ 
+            lat: stop.location.lat, 
+            lng: stop.location.lng, 
+            stop, 
+            routeIdx: route.userIndex, 
+            stopIdx, 
+            colorBg: getRouteColor(route.userIndex).bg, 
+            userId: route.userId 
           });
         });
       });
-
       const offsetStops = applyOverlapOffsets(rawStops, 9);
 
-      // Build a map from userIndex → offset stop list so we can re-stitch
-      // waypoints using the nudged coords.
-      const stopsByRoute = new Map<number, typeof offsetStops>();
-      offsetStops.forEach((s) => {
-        const list = stopsByRoute.get(s.routeIdx) ?? [];
-        list.push(s);
-        stopsByRoute.set(s.routeIdx, list);
-      });
+      if (driverPosition) {
+        L.marker(driverPosition, { icon: driverIcon }).bindPopup(`<strong>Driver</strong>`).addTo(layers);
+      }
 
-      // ── Place destination markers (with offsets) ──────────────────────────
-      offsetDestinations.forEach((dest) => {
-        L.marker([dest.lat, dest.lng], {
-          icon: createDestinationIcon(dest.colorBg),
-        })
-          .bindPopup(
-            `<div style="font-family:Inter,sans-serif;font-size:13px;">
-              <strong>${dest.userId}</strong><br/>
-              <span style="color:#64748b;">${dest.address || "Destination"}</span>
-            </div>`,
-          )
+      offsetStops.forEach((os) => {
+        L.marker([os.lat, os.lng], { icon: createColoredStopIcon(os.stopIdx + 1, os.colorBg) })
+          .bindPopup(`<strong>${os.stop.merchantName}</strong><br/>${os.userId} — Stop #${os.stopIdx + 1}`)
           .addTo(layers);
       });
 
-      // ── Per-route: driver + stops + route polyline ────────────────────────
-      for (const route of multiUserRoutes) {
-        const color = getRouteColor(route.userIndex);
-        const waypoints: { lat: number; lng: number }[] = [];
+      offsetDestinations.forEach((dest) => {
+        L.marker([dest.lat, dest.lng], { icon: createDestinationIcon(dest.colorBg) })
+          .bindPopup(`<strong>${dest.userId}</strong><br/>${dest.address || "Destination"}`)
+          .addTo(layers);
+      });
 
-        // Driver marker
-        if (route.driverLocation) {
-          const dp = extractGeoPoint(route.driverLocation);
-          waypoints.push({ lat: dp.lat, lng: dp.lng });
+      const optimizedPath = calculateGlobalOptimizedRoute(multiUserRoutes, driverPosition);
+      void renderRouteLine(optimizedPath, "#10b981");
 
-          L.marker([dp.lat, dp.lng], { icon: driverIcon })
-            .bindPopup(
-              `<div style="font-family:Inter,sans-serif;font-size:13px;">
-                <strong>Driver</strong><br/>
-                <span style="color:#64748b;">${route.userId}</span>
-              </div>`,
-            )
-            .addTo(layers);
-        }
-
-        // Stop markers (use offset positions for visual separation)
-        const routeOffsetStops = stopsByRoute.get(route.userIndex) ?? [];
-        routeOffsetStops.forEach((os) => {
-          waypoints.push({ lat: os.lat, lng: os.lng });
-          L.marker([os.lat, os.lng], {
-            icon: createColoredStopIcon(os.stopIdx + 1, color.bg),
-          })
-            .bindPopup(
-              `<div style="font-family:Inter,sans-serif;font-size:13px;">
-                <strong>${os.stop.merchantName}</strong><br/>
-                <span style="color:#64748b;">${route.userId} — Stop #${os.stopIdx + 1}</span>
-              </div>`,
-            )
-            .addTo(layers);
-        });
-
-        // Route polyline: driver → stops → delivery (use offset destination)
-        const destOffset = offsetDestinations.find(
-          (d) => d.userId === route.userId,
-        );
-        if (destOffset) {
-          waypoints.push({ lat: destOffset.lat, lng: destOffset.lng });
-        } else if (route.deliveryLocation) {
-          waypoints.push({
-            lat: route.deliveryLocation.lat,
-            lng: route.deliveryLocation.lng,
-          });
-        }
-
-        if (waypoints.length >= 2) {
-          const start = waypoints[0];
-          const end = waypoints[waypoints.length - 1];
-
-          const middleStops = waypoints.slice(1, -1);
-
-          const optimized = optimizeWaypointOrder(start, middleStops, end);
-
-          void renderRoute(optimized, color.bg);
-        }
-      }
-
-      if (allPositions.length > 0) {
-        map.fitBounds(L.latLngBounds(allPositions), {
-          padding: [40, 40],
-          maxZoom: 15,
-        });
-      }
+      map.fitBounds(L.latLngBounds(allPositions), { padding: [40, 40], maxZoom: 15 });
       return;
     }
 
     // ── SINGLE-USER MODE ───────────────────────────────────────────────────
-
-    // Stop markers
-    stops?.forEach((stop, index) => {
-      L.marker([stop.location.lat, stop.location.lng], {
-        icon: createStopIcon(index + 1, stop.state),
-      })
-        .bindPopup(
-          `<div style="font-family:Inter,sans-serif;font-size:13px;">
-            <strong>${stop.merchantName}</strong><br/>
-            <span style="color:#64748b;">Stop #${index + 1}</span>
-          </div>`,
-        )
-        .addTo(layers);
-    });
-
-    // Destination marker
-    if (deliveryLocation) {
-      L.marker([deliveryLocation.lat, deliveryLocation.lng], {
-        icon: singleDestinationIcon,
-      })
-        .bindPopup(
-          `<div style="font-family:Inter,sans-serif;font-size:13px;">
-            <strong>Delivery destination</strong><br/>
-            <span style="color:#64748b;">${deliveryLocation.address}</span>
-          </div>`,
-        )
-        .addTo(layers);
-    }
-
-    // Driver marker
-    if (driverPosition) {
-      L.marker(driverPosition, { icon: driverIcon })
-        .bindPopup(
-          `<div style="font-family:Inter,sans-serif;font-size:13px;">
-            <strong>Driver location</strong><br/>
-            <span style="color:#64748b;">Current position</span>
-          </div>`,
-        )
-        .addTo(layers);
-    }
-
-    // Route polyline: driver → stops → destination
-    if (positions.length > 1) {
-      const waypoints = [
-        ...(driverPosition
-          ? [{ lat: driverPosition[0], lng: driverPosition[1] }]
-          : []),
-        ...(stops?.map((s) => ({ lat: s.location.lat, lng: s.location.lng })) ??
-          []),
-        ...(deliveryLocation
-          ? [{ lat: deliveryLocation.lat, lng: deliveryLocation.lng }]
-          : []),
-      ];
-
-      const start = waypoints[0];
-      const end = waypoints[waypoints.length - 1];
-      const middleStops = waypoints.slice(1, -1);
-
-      const optimized = optimizeWaypointOrder(start, middleStops, end);
-
-      void renderRoute(optimized, "#0f766e");
-
-      map.fitBounds(L.latLngBounds(positions), {
-        padding: [40, 40],
-        maxZoom: 15,
+    if (stops || deliveryLocation) {
+      stops?.forEach((stop, index) => {
+        L.marker([stop.location.lat, stop.location.lng], { icon: createStopIcon(index + 1, stop.state) })
+          .bindPopup(`<strong>${stop.merchantName}</strong><br/>Stop #${index + 1}`)
+          .addTo(layers);
       });
-    } else if (positions.length === 1 && positions[0]) {
-      map.setView(positions[0], 14);
-    } else {
-      map.setView(center, 14);
+
+      if (deliveryLocation) {
+        L.marker([deliveryLocation.lat, deliveryLocation.lng], { icon: singleDestinationIcon }).addTo(layers);
+      }
+      if (driverPosition) {
+        L.marker(driverPosition, { icon: driverIcon }).addTo(layers);
+      }
+
+      const singleRouteData = { userId: "single", userIndex: 0, stops, deliveryLocation };
+      const optimizedPath = calculateGlobalOptimizedRoute([singleRouteData], driverPosition);
+      
+      void renderRouteLine(optimizedPath, "#0f766e");
+      
+      if (allPositions.length > 0) map.fitBounds(L.latLngBounds(allPositions), { padding: [40, 40], maxZoom: 15 });
     }
-  }, [
-    center,
-    deliveryLocation,
-    driverPosition,
-    positions,
-    stops,
-    multiUserRoutes,
-    allPositions,
-  ]);
 
-  const containerClass =
-    className ??
-    "h-[400px] w-full overflow-hidden rounded-[1.5rem] border border-white/70";
+  }, [ center, deliveryLocation, driverPosition, stops, multiUserRoutes, allPositions]);
 
+  const containerClass = className ?? "h-[400px] w-full overflow-hidden rounded-[1.5rem] border border-white/70";
   return (
     <div className={containerClass}>
       <div ref={containerRef} className="h-full w-full" />

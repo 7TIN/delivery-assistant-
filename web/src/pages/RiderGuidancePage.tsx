@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { MapView } from "@/components/MapView";
 import { RouteTimeline } from "@/components/RouteTimeline";
 import { SurfaceCard } from "@/components/SurfaceCard";
-import { UserControl, getRouteColor } from "@/components/UserControl";
+import { UserControl } from "@/components/UserControl";
 import { Button } from "@/components/ui/button";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { useUpdateDriverLocation } from "@/hooks/use-update-driver-location";
@@ -15,6 +15,7 @@ import { formatTime } from "@/lib/format";
 import { buildDisplayRouteStops, resolveMerchantName } from "@/lib/order-presenters";
 import { cn } from "@/lib/utils";
 import type { UserOrderRouteSummary, UserRoutesResponse } from "@/types/contracts";
+import { getRouteColor } from "@/lib/route-colors";
 
 const inputClassName =
   "h-11 rounded-2xl border border-border/80 bg-background/70 px-4 text-sm outline-none transition focus:border-primary/30 focus:ring-4 focus:ring-primary/10";
@@ -249,6 +250,7 @@ export default function RiderGuidancePage() {
                 </div>
                 <MapView
                   multiUserRoutes={multiUserRoutes}
+                  driverLocation={selectedOrder?.driverLocation}
                   className="h-[500px]"
                 />
               </SurfaceCard>
