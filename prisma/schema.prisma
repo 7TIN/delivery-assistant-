@@ -23,7 +23,7 @@ model Order {
   routePlans           RoutePlan[]
   dispatchInstructions DispatchInstruction[]
   opsTickets           OpsTicket[]
-  driverLocation       DriverLocation?
+  deliveryPerson       DeliveryPerson?
 
   @@index([status])
   @@index([createdAt])
@@ -117,7 +117,7 @@ model OpsTicket {
   @@index([status])
 }
 
-model DriverLocation {
+model DeliveryPerson {
   id        String   @id
   orderId   String   @unique
   driverLat Float

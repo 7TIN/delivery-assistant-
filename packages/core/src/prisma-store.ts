@@ -1,7 +1,7 @@
 import type {
   CreateOrderRequest,
   DispatchInstruction,
-  DriverLocation,
+  DeliveryPerson,
   GeoPoint,
   MerchantTask,
   OpsTicket,
@@ -317,13 +317,13 @@ export class PrismaStore implements OrderStore {
     return rows.map(mapOpsTicket);
   }
 
-  async getDriverLocation(orderId: string): Promise<DriverLocation | undefined> {
-    const row = await this.prisma.driverLocation.findUnique({ where: { orderId } });
-    return row ? mapDriverLocation(row) : undefined;
+  async getDeliveryPerson(orderId: string): Promise<DeliveryPerson | undefined> {
+    const row = await this.prisma.deliveryPerson.findUnique({ where: { orderId } });
+    return row ? mapDeliveryPerson(row) : undefined;
   }
 
-  async upsertDriverLocation(orderId: string, location: GeoPoint): Promise<void> {
-    await this.prisma.driverLocation.upsert({
+  async upsertDeliveryPerson(orderId: string, location: GeoPoint): Promise<void> {
+    await this.prisma.deliveryPerson.upsert({
       where: { orderId },
       update: {
         driverLat: location.lat,
@@ -344,7 +344,7 @@ export class PrismaStore implements OrderStore {
       return undefined;
     }
 
-    const [items, merchantTasks, vendorReports, routePlan, dispatchInstruction, opsTickets, driverLocation] =
+    const [items, merchantTasks, vendorReports, routePlan, dispatchInstruction, opsTickets, deliveryPerson] =
       await Promise.all([
         this.getOrderItems(orderId),
         this.getMerchantTasks(orderId),
@@ -352,7 +352,7 @@ export class PrismaStore implements OrderStore {
         this.getRoutePlan(orderId),
         this.getDispatchInstruction(orderId),
         this.getOpsTickets(orderId),
-        this.getDriverLocation(orderId),
+        this.getDeliveryPerson(orderId),
       ]);
 
     return {
@@ -363,7 +363,7 @@ export class PrismaStore implements OrderStore {
       routePlan,
       dispatchInstruction,
       opsTickets,
-      driverLocation,
+      deliveryPerson,
     };
   }
 
@@ -464,7 +464,7 @@ function mapOpsTicket(row: any): OpsTicket {
   };
 }
 
-function mapDriverLocation(row: any): DriverLocation {
+function mapDeliveryPerson(row: any): DeliveryPerson {
   return {
     orderId: row.orderId,
     location: {

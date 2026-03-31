@@ -9,7 +9,7 @@ import { SurfaceCard } from "@/components/SurfaceCard";
 import { UserControl } from "@/components/UserControl";
 import { Button } from "@/components/ui/button";
 import { usePersistentState } from "@/hooks/use-persistent-state";
-import { useUpdateDriverLocation } from "@/hooks/use-update-driver-location";
+import { useUpdateDeliveryPerson } from "@/hooks/use-update-driver-location";
 import { getAllUsersRoutes } from "@/api/orders";
 import { formatTime } from "@/lib/format";
 import { buildDisplayRouteStops, resolveMerchantName } from "@/lib/order-presenters";
@@ -73,7 +73,7 @@ export default function RiderGuidancePage() {
       userIndex: order.userIndex,
       stops: buildDisplayRouteStops(order.routePlan, order.dispatchInstruction, order.status),
       deliveryLocation: order.deliveryLocation,
-      driverLocation: order.driverLocation,
+      deliveryPerson: order.deliveryPerson,
     }));
   }, [allOrders]);
 
@@ -250,13 +250,13 @@ export default function RiderGuidancePage() {
                 </div>
                 <MapView
                   multiUserRoutes={multiUserRoutes}
-                  driverLocation={selectedOrder?.driverLocation}
+                  deliveryPerson={selectedOrder?.deliveryPerson}
                   className="h-[500px]"
                 />
               </SurfaceCard>
 
               {selectedOrder && (
-                <DriverLocationControl orderId={selectedOrder.orderId} />
+                <DeliveryPersonControl orderId={selectedOrder.orderId} />
               )}
 
               <SurfaceCard>
@@ -289,8 +289,8 @@ const DEMO_DRIVER_LOCATION = {
   lng: -122.404046,
 };
 
-function DriverLocationControl({ orderId }: { orderId: string }) {
-  const updateMutation = useUpdateDriverLocation(orderId);
+function DeliveryPersonControl({ orderId }: { orderId: string }) {
+  const updateMutation = useUpdateDeliveryPerson(orderId);
   const [lat, setLat] = useState(DEMO_DRIVER_LOCATION.lat.toString());
   const [lng, setLng] = useState(DEMO_DRIVER_LOCATION.lng.toString());
 

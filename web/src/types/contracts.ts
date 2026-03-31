@@ -127,7 +127,7 @@ export interface OpsTicket {
   resolvedAt?: string;
 }
 
-export interface DriverLocation {
+export interface DeliveryPerson {
   orderId: string;
   location: GeoPoint;
   updatedAt: string;
@@ -141,7 +141,7 @@ export interface OrderSnapshot {
   routePlan?: RoutePlan;
   dispatchInstruction?: DispatchInstruction;
   opsTickets: OpsTicket[];
-  driverLocation?: DriverLocation;
+  deliveryPerson?: DeliveryPerson;
 }
 
 export interface UserOrderRouteSummary {
@@ -155,7 +155,7 @@ export interface UserOrderRouteSummary {
   }>;
   routePlan?: RoutePlan;
   dispatchInstruction?: DispatchInstruction;
-  driverLocation?: DriverLocation;
+  deliveryPerson?: DeliveryPerson;
 }
 
 export interface UserRoutesResponse {

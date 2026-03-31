@@ -1,7 +1,7 @@
 import {
   type CreateOrderRequest,
   type DispatchInstruction,
-  type DriverLocation,
+  type DeliveryPerson,
   type GeoPoint,
   type MerchantTask,
   type OpsTicket,
@@ -37,8 +37,8 @@ export interface OrderStore {
   saveDispatchInstruction(instruction: DispatchInstruction): Promise<void>;
   addOpsTicket(ticket: OpsTicket): Promise<void>;
   getOpsTickets(orderId: string): Promise<OpsTicket[]>;
-  getDriverLocation(orderId: string): Promise<DriverLocation | undefined>;
-  upsertDriverLocation(orderId: string, location: GeoPoint): Promise<void>;
+  getDeliveryPerson(orderId: string): Promise<DeliveryPerson | undefined>;
+  upsertDeliveryPerson(orderId: string, location: GeoPoint): Promise<void>;
   getSnapshot(orderId: string): Promise<OrderSnapshot | undefined>;
   close?(): Promise<void>;
 }
@@ -51,7 +51,7 @@ export class InMemoryStore implements OrderStore {
   private readonly routePlans = new Map<string, RoutePlan>();
   private readonly dispatchInstructions = new Map<string, DispatchInstruction>();
   private readonly opsTickets = new Map<string, OpsTicket[]>();
-  private readonly driverLocations = new Map<string, DriverLocation>();
+  private readonly deliveryPersons = new Map<string, DeliveryPerson>();
 
   async createOrder(request: CreateOrderRequest): Promise<Order> {
     const now = isoNow();
@@ -225,19 +225,19 @@ export class InMemoryStore implements OrderStore {
     return this.opsTickets.get(orderId) ?? [];
   }
 
-  async getDriverLocation(orderId: string): Promise<DriverLocation | undefined> {
-    return this.driverLocations.get(orderId);
+  async getDeliveryPerson(orderId: string): Promise<DeliveryPerson | undefined> {
+    return this.deliveryPersons.get(orderId);
   }
 
-  async upsertDriverLocation(orderId: string, location: GeoPoint): Promise<void> {
-    const existing = this.driverLocations.get(orderId);
-    const driverLocation: DriverLocation = {
+  async upsertDeliveryPerson(orderId: string, location: GeoPoint): Promise<void> {
+    const existing = this.deliveryPersons.get(orderId);
+    const deliveryPerson: DeliveryPerson = {
       orderId,
       location,
       updatedAt: existing?.updatedAt ?? isoNow(),
     };
-    driverLocation.updatedAt = isoNow();
-    this.driverLocations.set(orderId, driverLocation);
+    deliveryPerson.updatedAt = isoNow();
+    this.deliveryPersons.set(orderId, deliveryPerson);
   }
 
   async getSnapshot(orderId: string): Promise<OrderSnapshot | undefined> {
@@ -254,7 +254,7 @@ export class InMemoryStore implements OrderStore {
       routePlan: await this.getRoutePlan(orderId),
       dispatchInstruction: await this.getDispatchInstruction(orderId),
       opsTickets: await this.getOpsTickets(orderId),
-      driverLocation: await this.getDriverLocation(orderId),
+      deliveryPerson: await this.getDeliveryPerson(orderId),
     };
   }
 }

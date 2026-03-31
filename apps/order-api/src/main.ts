@@ -64,18 +64,18 @@ const server = Bun.serve({
         return json(route);
       }
 
-      if (orderMatch && request.method === "GET" && orderMatch.action === "driver-location") {
-        const driverLocation = await context.services.orderApi.getDriverLocation(orderMatch.orderId);
-        if (!driverLocation) {
-          return json({ error: "Driver location not found" }, 404);
+      if (orderMatch && request.method === "GET" && orderMatch.action === "delivery-person") {
+        const deliveryPerson = await context.services.orderApi.getDeliveryPerson(orderMatch.orderId);
+        if (!deliveryPerson) {
+          return json({ error: "Delivery person not found" }, 404);
         }
-        return json(driverLocation);
+        return json(deliveryPerson);
       }
 
-      if (orderMatch && request.method === "PUT" && orderMatch.action === "driver-location") {
+      if (orderMatch && request.method === "PUT" && orderMatch.action === "delivery-person") {
         const body = (await request.json()) as GeoPoint;
-        const driverLocation = await context.services.orderApi.updateDriverLocation(orderMatch.orderId, body);
-        return json(driverLocation);
+        const deliveryPerson = await context.services.orderApi.updateDeliveryPerson(orderMatch.orderId, body);
+        return json(deliveryPerson);
       }
 
       return json({ error: "Not found" }, 404);
@@ -125,7 +125,7 @@ async function logRoutingDiagnostics(): Promise<void> {
 }
 
 function matchOrderPath(path: string):
-  | { orderId: string; action: "root" | "cancel" | "route" | "driver-location" }
+  | { orderId: string; action: "root" | "cancel" | "route" | "delivery-person" }
   | undefined {
   const root = path.match(/^\/api\/v1\/orders\/([^/]+)$/);
   if (root?.[1]) {
@@ -142,9 +142,9 @@ function matchOrderPath(path: string):
     return { orderId: route[1], action: "route" };
   }
 
-  const driverLocation = path.match(/^\/api\/v1\/orders\/([^/]+)\/driver-location$/);
-  if (driverLocation?.[1]) {
-    return { orderId: driverLocation[1], action: "driver-location" };
+  const deliveryPerson = path.match(/^\/api\/v1\/orders\/([^/]+)\/delivery-person$/);
+  if (deliveryPerson?.[1]) {
+    return { orderId: deliveryPerson[1], action: "delivery-person" };
   }
 
   return undefined;

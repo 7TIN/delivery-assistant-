@@ -6,7 +6,7 @@ import "leaflet/dist/leaflet.css";
 import type { DisplayRouteStop } from "@/lib/order-presenters";
 import type {
   DeliveryLocation,
-  DriverLocation,
+  DeliveryPerson,
   GeoPoint,
 } from "@/types/contracts";
 import { getRouteColor } from "@/lib/route-colors";
@@ -239,7 +239,7 @@ async function fetchRoadRoute(waypoints: { lat: number; lng: number }[]): Promis
 // Types
 // ---------------------------------------------------------------------------
 
-function extractGeoPoint(loc: DriverLocation | GeoPoint): GeoPoint {
+function extractGeoPoint(loc: DeliveryPerson | GeoPoint): GeoPoint {
   return "location" in loc ? loc.location : loc;
 }
 
@@ -248,13 +248,13 @@ interface UserRouteData {
   userIndex: number;
   stops?: DisplayRouteStop[];
   deliveryLocation?: DeliveryLocation;
-  driverLocation?: DriverLocation | GeoPoint;
+  deliveryPerson?: DeliveryPerson | GeoPoint;
 }
 
 interface MapViewProps {
   stops?: DisplayRouteStop[];
   deliveryLocation?: DeliveryLocation;
-  driverLocation?: DriverLocation | GeoPoint;
+  deliveryPerson?: DeliveryPerson | GeoPoint;
   className?: string;
   multiUserRoutes?: UserRouteData[];
 }
@@ -283,7 +283,7 @@ const SF_BOUNDS: [[number, number], [number, number]] = [
 export function MapView({
   stops,
   deliveryLocation,
-  driverLocation,
+  deliveryPerson,
   className,
   multiUserRoutes,
 }: MapViewProps) {
@@ -292,8 +292,8 @@ export function MapView({
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
 
   const driverPosition = useMemo<[number, number] | null>(
-    () => driverLocation ? [extractGeoPoint(driverLocation).lat, extractGeoPoint(driverLocation).lng] : null,
-    [driverLocation],
+    () => deliveryPerson ? [extractGeoPoint(deliveryPerson).lat, extractGeoPoint(deliveryPerson).lng] : null,
+    [deliveryPerson],
   );
 
   const center = useMemo<[number, number]>(() => {

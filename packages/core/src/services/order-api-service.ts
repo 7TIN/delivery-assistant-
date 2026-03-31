@@ -1,7 +1,7 @@
 import type {
   CreateOrderRequest,
   CreateOrderResponse,
-  DriverLocation,
+  DeliveryPerson,
   GeoPoint,
   OrderSnapshot,
   RoutePlan,
@@ -60,7 +60,7 @@ export class OrderApiService {
         })),
         routePlan: snapshot.routePlan,
         dispatchInstruction: snapshot.dispatchInstruction,
-        driverLocation: snapshot.driverLocation,
+        deliveryPerson: snapshot.deliveryPerson,
       }));
   }
 
@@ -80,16 +80,16 @@ export class OrderApiService {
     return this.store.getRoutePlan(orderId);
   }
 
-  async getDriverLocation(orderId: string): Promise<DriverLocation | undefined> {
-    return this.store.getDriverLocation(orderId);
+  async getDeliveryPerson(orderId: string): Promise<DeliveryPerson | undefined> {
+    return this.store.getDeliveryPerson(orderId);
   }
 
-  async updateDriverLocation(orderId: string, location: GeoPoint): Promise<DriverLocation> {
+  async updateDeliveryPerson(orderId: string, location: GeoPoint): Promise<DeliveryPerson> {
     validateGeoPoint(location);
-    await this.store.upsertDriverLocation(orderId, location);
-    const updated = await this.store.getDriverLocation(orderId);
+    await this.store.upsertDeliveryPerson(orderId, location);
+    const updated = await this.store.getDeliveryPerson(orderId);
     if (!updated) {
-      throw new Error("Failed to update driver location");
+      throw new Error("Failed to update delivery person");
     }
     return updated;
   }
